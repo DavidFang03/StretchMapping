@@ -22,7 +22,7 @@ def handle_dump(dump_prefix):
 
     return last_dump_nb, folder_name
 
-def Model(dr,xmax,pmass,rhoprofile):
+def Model(dr,xmax,pmass,rhoprofile, K, gamma):
     if not shamrock.sys.is_initialized():
         shamrock.change_loglevel(1)
         shamrock.sys.init("0:0")
@@ -65,7 +65,9 @@ def Model(dr,xmax,pmass,rhoprofile):
     # ? set_artif_viscosity_Constant(typename AVConfig::Constant v) vs set_artif_viscosity_ConstantDisc(typename AVConfig::ConstantDisc v) ?
     # cfg.set_eos_locally_isothermalLP07(cs0=cs0, q=q, r0=r0)
     cfg.set_particle_tracking(True) # ! important
-    cfg.set_eos_locally_isothermal()
+
+    cfg.set_eos_polytropic(K,gamma) # n = 1
+    # cfg.set_eos_locally_isothermal()
     cfg.print_status()
     cfg.set_units(codeu)
     model.set_solver_config(cfg)
@@ -87,12 +89,12 @@ def Model(dr,xmax,pmass,rhoprofile):
     setup = model.get_setup()
 
     # gen = setup.make_generator_lattice_hcp_smap(dr, bmin, bmax, [rhoprofile], "spherical", ["r"])
+    # setup.apply_setup(gen)
     hcp = setup.make_generator_lattice_hcp(dr, bmin, bmax)
-
     stretched_hcp = setup.make_modifier_stretch_mapping(
     parent=hcp, rhoprofiles=[rhoprofile], system="spherical", axes=["r"])
-    
     setup.apply_setup(stretched_hcp)
+
     model.set_cfl_cour(C_cour)
     model.set_cfl_force(C_force)
 
@@ -103,42 +105,58 @@ def Model(dr,xmax,pmass,rhoprofile):
     print("hpart: ",ctx.collect_data()["hpart"])
     return ctx, model
 
-def export(model, ctx, dump_prefix, rhotarget):
+def dump(model, dump_prefix):
     folder_name = sham_utilities.get_folder(dump_prefix)
     path_withoutext = f"{folder_name}/{sham_utilities.gen_new_dump_name(dump_prefix)}"
     print(dump_prefix)
     dump_path=f"{path_withoutext}.sham"
-    model.dump(dump_path)
     print(f"Dumped {dump_path}")
+    model.dump(dump_path)
+
+def export(model, ctx, dump_prefix, rhotarget):
+    # dump(model, dump_prefix)
     # plot_utilities.plot_lattice(ctx,plot_path)
     data = ctx.collect_data()
     mpart = model.get_particle_mass()
 
-    figpos = px_utilities.px_Pos(data)
+    figpos = px_utilities.px_Pos(data, mpart)
     # figpos.write_image(f"{path_withoutext}_pos.png")
 
     figrho = px_utilities.px_rho(data,mpart,rhotarget)
 
-    figrho = px_utilities.px_hist(data)
+    # figrho = px_utilities.px_hist(data)
     # figrho.write_image(f"{path_withoutext}_rho.png")
 
-    print(f"Plotted {path_withoutext}")
+    # print(f"Plotted {path_withoutext}")
 
 # ! Simulation parameters
 if __name__ == '__main__':
     dump_prefix = "lattice_stretched_"
-    Npart_i = 10
+    Npart_i = 20
     xmax = 1
     dr = 2*xmax/(Npart_i-1)
     pmass = 1
-    rhoprofile = lambda r: 1/((r+0.1)**2)
-    # rhoprofile = lambda r: 1
+    gamma=1. + (1/5)
+    K=1
+    rhoprofile = lambda r: 1/np.sqrt(1+(r**2)/3)
+    # rhoprofile = lambda r: 1/np.sqrt(1+r**2)
+    # rhoprofile = lambda r: 1/((r+0.1)**2)
+    # rhoprofile = lambda r: 1/((r+0.01)**2)
+    # rhoprofile = lambda r: 
+    # rhoprofile = lambda r: np.sinc(r)
     # rhoprofile = np.sinc
 
 
-    ctx, model = Model(dr,xmax, pmass, rhoprofile=rhoprofile)
+    ctx, model = Model(dr,xmax, pmass, rhoprofile=rhoprofile, K=K, gamma=gamma)
     lastdumpnb, folder_name = handle_dump(dump_prefix)
     export(model, ctx, dump_prefix, rhoprofile)
-    print(f"Ended up with {model.get_total_part_count()} particles")
+    for i in range(1):
+        model.change_htolerances(coarse=1.3, fine=min(1.3, 1.1))
+        model.evolve_once_override_time(0.,0.)
+        model.change_htolerances(coarse=1.1, fine=min(1.1, 1.1))
+    export(model, ctx, dump_prefix, rhoprofile)
 
-# ./shamrock --sycl-cfg 0:0 --loglevel 1 --rscript ./lattice_stretched_shamrock.py 
+    print(f"Ended up with {model.get_total_part_count()} particles")
+    
+
+# ./shamrock --sycl-cfg 0:0 --loglevel 10 --rscript ./lattice_stretched_shamrock.py 
