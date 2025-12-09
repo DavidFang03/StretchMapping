@@ -11,87 +11,42 @@ def get_rho_values(data, mpart):
     return Rho
 
 
-def px_Pos(data, mpart):
-    Pos = data["xyz"]
-    x = Pos[:, 0]
-    y = Pos[:, 1]
-    z = Pos[:, 2]
-    rho_values = get_rho_values(data, mpart)
-    fig = go.Figure(
-        data=[
-            go.Scatter3d(
-                x=x,
-                y=y,
-                z=z,
-                mode="markers",
-                marker=dict(
-                    color=rho_values,
-                    colorscale="Viridis",
-                    colorbar=dict(title="$\\rho$", x=0.8),
-                    cmin=0,
-                    cmax=np.max(rho_values),
-                ),
-            )
-        ]
-    )
-    # fig.show()
-    return fig
-
-
-def px_rho(data, mpart, rhotarget):
-    Pos = data["xyz"]
-    R = np.linalg.norm(Pos, axis=1)
-    rmin = 0
-    rmax = np.max(R)
-    Rgrid = np.linspace(rmin, rmax, 200)
-
-    Np = Pos.shape[0]
-    mtot = Np * mpart
-    integral_profile = stretchmap_utilities.integrate_profile(rhotarget, rmin, rmax, 3)
-    rho0 = mtot / integral_profile
-    ytarget = rhotarget(Rgrid)
-
-    Rho = get_rho_values(data, mpart)
-
-    figrho = go.Figure(layout_yaxis_range=[0, 1.1 * np.max(rho0 * ytarget)])
-    figrho.add_trace(go.Scatter(x=R, y=Rho, mode="markers", name="rhoSPH"))
-    figrho.add_trace(go.Scatter(x=Rgrid, y=rho0 * ytarget, mode="lines", name="Target"))
-    figrho.update_layout(xaxis_title=r"$r$", yaxis_title=r"$\rho$")
-    # figrho.show()
-    return figrho
-
-
 def format_inputparams(input_params):
     string = ""
     for key, value in input_params.items():
-        string += f"{key}: {value} <br>"
+        if type(value) == float:
+            string += f"{key}: {value:.1e} <br>"
+        else:
+            string += f"{key}: {value} <br>"
     return string
 
 
-def px_3d_and_rho(data, rhotarget, mpart, t, input_params, img_path):
+def px_3d_and_rho(data, mpart, t, img_path, rhotarget, input_params):
+
+    Pos = data["xyz"]
+    R = np.linalg.norm(Pos, axis=1)
+
+    Np = Pos.shape[0]
+    mtot = Np * mpart
+    integral_profile = stretchmap_utilities.integrate_target(rhotarget)
+    rho0 = mtot / integral_profile
+
+    Rho = get_rho_values(data, mpart)
+
+    haspressure = False
+    if "pressure" in data:
+        haspressure = True
+        pressure = data["pressure"]
+
+        # figrho = go.Figure(layout_yaxis_range=[0, 1.1 * np.max(rho0 * ytarget)])
     fig = make_subplots(
         rows=1,
         cols=2,
-        specs=[[{}, {"type": "scatter3d"}]],
+        specs=[[{"secondary_y": haspressure}, {"type": "scatter3d"}]],
         horizontal_spacing=0.15,
         column_widths=[0.6, 0.4],
     )
 
-    Pos = data["xyz"]
-    R = np.linalg.norm(Pos, axis=1)
-    rmin = 0
-    rmax = np.max(R)
-    Rgrid = np.linspace(rmin, rmax, 200)
-
-    Np = Pos.shape[0]
-    mtot = Np * mpart
-    integral_profile = stretchmap_utilities.integrate_profile(rhotarget, rmin, rmax, 3)
-    rho0 = mtot / integral_profile
-    ytarget = rhotarget(Rgrid)
-
-    Rho = get_rho_values(data, mpart)
-
-    # figrho = go.Figure(layout_yaxis_range=[0, 1.1 * np.max(rho0 * ytarget)])
     fig.add_trace(
         go.Scatter(
             x=R,
@@ -104,9 +59,14 @@ def px_3d_and_rho(data, rhotarget, mpart, t, input_params, img_path):
         col=1,
     )
     fig.add_trace(
-        go.Scatter(x=Rgrid, y=rho0 * ytarget, mode="lines", name="Target"), row=1, col=1
+        go.Scatter(
+            x=rhotarget[0], y=rho0 * rhotarget[1], mode="lines", name="Initial target"
+        ),
+        row=1,
+        col=1,
     )
-    fig.update_yaxes(range=[0, None], row=1, col=1)
+
+    fig.update_yaxes(range=[0, None], exponentformat="E", row=1, col=1)
 
     fig.add_trace(
         go.Scatter3d(
@@ -121,69 +81,167 @@ def px_3d_and_rho(data, rhotarget, mpart, t, input_params, img_path):
                 colorbar=dict(title="Density", tickfont=dict(size=24), xanchor="left"),
                 cmin=0,
                 cmax=np.max(Rho),
+                opacity=0.6,
+                size=2,
             ),
             showlegend=False,
         ),
         col=2,
         row=1,
     )
+
+    if haspressure:
+        fig.add_trace(
+            go.Scatter(x=R, y=pressure, mode="markers", name="pressure"),
+            row=1,
+            col=1,
+            secondary_y=True,
+        )
+
     fig.update_layout(
         height=860,
         width=1920,
         title_text=f"{img_path} t={t:.2e}",
         annotations=[
             dict(
-                text=f"{data["xyz"].shape[0]} particles",  # Le texte du sous-titre
-                showarrow=False,  # Cache la flèche d'annotation
+                text=f"{Np} particles, {mtot:.1e} solar masses",
+                showarrow=False,
                 xref="paper",
                 yref="paper",
-                x=0.5,  # Centre le texte horizontalement
-                y=1.03,  # Position verticale (ajustez cette valeur)
+                x=0.5,
+                y=1.03,
                 xanchor="center",
                 yanchor="bottom",
-                font=dict(size=12, color="gray"),  # Style du sous-titre
-            )
+                font=dict(size=12, color="gray"),
+            ),
+            dict(
+                text=format_inputparams(input_params),
+                align="left",
+                showarrow=False,
+                xref="paper",
+                yref="paper",
+                x=0.55,
+                y=0.5,
+                bordercolor="black",
+                borderwidth=1,
+            ),
         ],
         font=dict(family="Courier New, monospace"),
         xaxis=dict(
             title_font=dict(size=16, family="Courier New"),
             tickfont=dict(size=24, family="Courier New"),
+            title=r"$r / R_\odot$",
         ),
         yaxis=dict(
             title_font=dict(size=16, family="Courier New"),
             tickfont=dict(size=24, family="Courier New"),
+            title=r"$\rho$",
         ),
         legend=dict(
-            orientation="h",  # Légende horizontale
-            yanchor="bottom",  # Ancrage vers le bas
-            y=1.02,  # Position verticale (au-dessus du graphique)
-            xanchor="center",  # Ancrage horizontal centré
-            x=0.25,  # Position horizontale (dans le graphique de gauche)
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="center",
+            x=0.25,
         ),
-        # paper_bgcolor="black",
-        # plot_bgcolor="#111111",
-        # margin=dict(t=0, b=0, l=0, r=0),
-    )
-    fig.add_annotation(
-        text=format_inputparams(input_params),
-        align="left",
-        showarrow=False,
-        xref="paper",
-        yref="paper",
-        x=0.55,
-        y=0.5,
-        bordercolor="black",
-        borderwidth=1,
     )
 
     return fig
 
 
-def px_hist(data):
-    r = np.linalg.norm(data["xyz"], axis=1)
-    fighist = go.Figure(data=[go.Histogram(x=r, nbinsx=r.shape[0])])
-    # fighist.show()
-    return fighist
+def update_px_3d_and_rho(fig, data, mpart, t, img_path, input_params):
+    # 1. Calculer les nouvelles données (comme dans votre fonction originale)
+    Pos = data["xyz"]
+    R = np.linalg.norm(Pos, axis=1)
+    Rho = get_rho_values(data, mpart)
+
+    Np = Pos.shape[0]
+    mtot = Np * mpart
+
+    # Note: On recalcule Rgrid et ytarget uniquement si l'intervalle [rmin, rmax] change
+    # Si rmax peut changer, vous devez recalculer et mettre à jour la Trace 1 (Target) également.
+    # Pour l'instant, on suppose la Trace 1 fixe si l'intervalle est constant.
+
+    # 2. Mise à jour des traces existantes
+
+    # Trace 0 : Scatter 2D (rhoSPH)
+    fig.data[0].update(
+        x=R,
+        y=Rho,
+    )
+
+    if "pressure" in data:
+        pressure = data["pressure"]
+        print(pressure)
+        fig.data[3].update(
+            x=R,
+            y=pressure,
+        )
+        fig.update_yaxes(
+            range=[0, 1.1 * np.max(pressure)], row=1, col=1, secondary_y=True
+        )
+
+    fig.update_yaxes(range=[0, 1.1 * np.max(Rho)], row=1, col=1, secondary_y=False)
+    arr1inds = R.argsort()
+    sorted_R = R[arr1inds]
+    sorted_Rho = Rho[arr1inds]
+    est_mass = stretchmap_utilities.integrate_target(np.array([sorted_R, sorted_Rho]))
+    print(f"{est_mass}")
+
+    # Trace 2 : Scatter3D
+    fig.data[2].update(
+        x=Pos[:, 0],
+        y=Pos[:, 1],
+        z=Pos[:, 2],
+        marker_color=Rho,
+        marker=dict(
+            color=Rho,
+            colorscale="Viridis",
+            colorbar=dict(title="Density", tickfont=dict(size=24), xanchor="left"),
+            cmin=0,
+            cmax=np.max(Rho),
+            opacity=0.6,
+            size=2,
+        ),
+        # Utilisez marker_color pour mettre à jour la couleur
+    )
+
+    # Mise à jour des échelles des axes (si nécessaire, ici seulement y-axis 2D)
+    # fig.update_yaxes(range=[0, np.max(Rho) * 1.1], row=1, col=1)
+    # Pour ne pas recréer la figure, il est souvent plus simple de laisser la plage
+    # de l'axe y s'adapter à la nouvelle donnée, ou la fixer à une valeur maximale.
+
+    # 3. Mise à jour du titre et de l'annotation (qui sont spécifiques au temps t)
+    fig.update_layout(
+        title_text=f"{img_path} t={t:.2e}",
+        annotations=[
+            dict(
+                text=f"{Np} particles, {mtot:.1e} solar masses",
+                showarrow=False,
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=1.03,
+                xanchor="center",
+                yanchor="bottom",
+                font=dict(size=12, color="gray"),
+            ),
+            dict(
+                text=format_inputparams(input_params),
+                align="left",
+                showarrow=False,
+                xref="paper",
+                yref="paper",
+                x=0.55,
+                y=0.5,
+                bordercolor="black",
+                borderwidth=1,
+            ),
+        ],
+        # Conservez tous les autres paramètres de layout
+    )
+
+    return fig
 
 
 def movie(pattern_png, filemp4, fps):
@@ -201,6 +259,9 @@ def movie(pattern_png, filemp4, fps):
 
 
 def compute_fps(inputparams):
+    """
+    so that the duration of the movie is proportional to the duration of the run
+    """
     nb_dumps = inputparams["nb_dumps"]
     tf = inputparams["tf"]
     return int((nb_dumps / tf) * 2 / 3)

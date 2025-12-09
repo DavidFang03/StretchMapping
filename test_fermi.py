@@ -3,6 +3,7 @@ import numpy as np
 import os
 import glob
 import sham_utilities
+import stretchmap_utilities
 import px_utilities
 import ffmpeg
 
@@ -33,8 +34,9 @@ def reloadModel(dump_prefix):
     ctx.pdata_layout_new()
     model = shamrock.get_Model_SPH(context=ctx, vector_type="f64_3", sph_kernel="M4")
     dump_path = sham_utilities.get_last_dump_path(dump_prefix)
+    print("loading from", dump_path)
     model.load_from_dump(dump_path)
-    return ctx, model
+    return model, ctx
 
 
 def adim_r(r, codeu):
@@ -48,9 +50,9 @@ def adim_r(r, codeu):
     return r * np.sqrt(4 * np.pi * G / 2)
 
 
-def get_radius(K, codeu):
+def get_radius_n1(K, codeu):
     """
-    for n =1
+    for n = 1
 
     :param K: Description
     :param codeu: Description
@@ -75,14 +77,15 @@ def initModel():
     si = shamrock.UnitSystem()
     sicte = shamrock.Constants(si)
     codeu = shamrock.UnitSystem(
-        unit_length=sicte.au(),
+        unit_length=sicte.solar_radius(),
         unit_mass=sicte.sol_mass(),
-        unit_time=np.sqrt(sicte.au() ** 3.0 / 6.67e-11 / sicte.sol_mass()),
+        unit_time=np.sqrt(sicte.solar_radius() ** 3.0 / sicte.G() / sicte.sol_mass()),
     )
 
     ucte = shamrock.Constants(codeu)
     G = ucte.G()
-    print("G", G)
+    print("G code", G)
+    print("G SI", sicte.G())
 
     ctx = shamrock.Context()
     ctx.pdata_layout_new()
@@ -91,30 +94,27 @@ def initModel():
     return model, ctx, codeu
 
 
-def setupModel(model, codeu, dr, xmax, pmass, rhoprofile, K, gamma, SG):
-
-    # ? Integrator parameters (parameters in CFL condition)
-    C_cour = 0.3
-    C_force = 0.25
+def setupModel(model, codeu, dr, xmax, mtot, rhotarget, eos, SG, epsplummer):
     cfg = model.gen_default_config()
-
     cfg.set_artif_viscosity_VaryingCD10(
         alpha_min=0.0, alpha_max=1, sigma_decay=0.1, alpha_u=1, beta_AV=2
     )
-    # ? set_artif_viscosity_Constant(typename AVConfig::Constant v) vs set_artif_viscosity_ConstantDisc(typename AVConfig::ConstantDisc v) ?
     cfg.set_particle_tracking(True)  # ! important ?
 
     if SG:
         cfg.set_self_gravity_mm(
             order=5, opening_angle=0.5, reduction_level=3
         )  #! self-gravity
-        cfg.set_softening_plummer(epsilon=1e-9)
+        cfg.set_softening_plummer(epsilon=eps_plummer)
 
-    cfg.set_eos_polytropic(K, gamma)  # n = 1
-    # cfg.print_status()
+    if eos["name"] == "fermi":
+        cfg.set_eos_fermi(eos["values"]["mu_e"])  # mu_e = 2 e.g
+    elif eos["name"] == "polytropic":
+        cfg.set_eos_polytropic(eos["values"]["K"], eos["values"]["gamma"])
+
     cfg.set_units(codeu)
     model.set_solver_config(cfg)
-    model.set_particle_mass(pmass)
+    # model.set_particle_mass(pmass)
 
     # should be number of SPH particles per GPU / 4?
     # seems that it can be quite large...
@@ -126,17 +126,12 @@ def setupModel(model, codeu, dr, xmax, pmass, rhoprofile, K, gamma, SG):
     model.resize_simulation_box(sbmin, sbmax)
     bmin = (-xmax, -xmax, -xmax)
     bmax = (xmax, xmax, xmax)
-    # center = (0,0,0)
 
     # generate model setup
     setup = model.get_setup()
-
-    # gen = setup.make_generator_lattice_hcp_smap(dr, bmin, bmax, [rhoprofile], "spherical", ["r"])
-    # setup.apply_setup(gen)
     hcp = setup.make_generator_lattice_hcp(dr, bmin, bmax)
-
-    tabx = np.linspace(0, xmax)
-    tabrho = rhoprofile(tabx)
+    tabx = rhotarget[0]
+    tabrho = rhotarget[1]
     stretched_hcp = setup.make_modifier_stretch_mapping(
         parent=hcp,
         system="spherical",
@@ -145,17 +140,14 @@ def setupModel(model, codeu, dr, xmax, pmass, rhoprofile, K, gamma, SG):
         box_max=bmax,
         tabx=tabx,
         tabrho=tabrho,
+        mtot=mtot,
     )
     setup.apply_setup(stretched_hcp)
 
+    C_cour = 0.3
+    C_force = 0.25
     model.set_cfl_cour(C_cour)
     model.set_cfl_force(C_force)
-
-    # convergence for smoothing length
-    # model.change_htolerances(coarse=1.3, fine=min(1.3, 1.1))
-    # model.timestep()
-    # model.change_htolerances(coarse=1.1, fine=min(1.1, 1.1))
-    print("hpart: ", ctx.collect_data()["hpart"])
     return model, ctx
 
 
@@ -164,13 +156,20 @@ def dump(model, dump_path):
     print(f"Dumped {dump_path}")
 
 
-def plot(model, ctx, rhotarget, intputparams, img_path):
+def plot(fig, model, ctx, rhotarget, inputparams, img_path):
     data = ctx.collect_data()
     mpart = model.get_particle_mass()
     t = model.get_time()
-    fig = px_utilities.px_3d_and_rho(data, rhotarget, mpart, t, intputparams, img_path)
+    inputparams["pmass"] = mpart
 
+    if fig is None:
+        fig = px_utilities.px_3d_and_rho(
+            data, mpart, t, img_path, rhotarget, inputparams
+        )
+    else:
+        px_utilities.update_px_3d_and_rho(fig, data, mpart, t, img_path, inputparams)
     print("I will write this image in", img_path)
+
     fig.write_image(img_path)
 
     return fig
@@ -179,39 +178,38 @@ def plot(model, ctx, rhotarget, intputparams, img_path):
 def write_json_params(inputparams, json_path):
     import json
 
-    # TODO - To format
-
     with open(json_path, "w") as fp:
-        json.dump(inputparams, fp)
+        json.dump(inputparams, fp, indent=4)
 
 
-def test_init(model, ctx, rhoprofile, intputparams, dump_prefix):
+def test_init(model, ctx, rhotarget, inputparams, dump_prefix):
     """
     Dump and plot initial configuration then show it.
     Evolve with dt = 0, dump and plot.
 
     :param model: Description
     :param ctx: Description
-    :param rhoprofile: Description
+    :param rhotarget: Description
     :param img_path: Description
     :param dump_path: Description
     """
-    newpath_withoutext = sham_utilities.gen_new_path_withoutext(dump_prefix)
 
     newpath_withoutext = sham_utilities.gen_new_path_withoutext(dump_prefix)
     dump_path = f"{newpath_withoutext}.sham"
     img_path = f"{newpath_withoutext}.png"
     dump(model, dump_path=dump_path)  # **before** plotting
-    fig = plot(model, ctx, rhoprofile, intputparams, img_path)
-    fig.show()
+    fig = plot(None, model, ctx, rhotarget, inputparams, img_path)
+    # fig.show()
     model.change_htolerances(coarse=1.3, fine=min(1.3, 1.1))
     model.evolve_once_override_time(0.0, 0.0)
     model.change_htolerances(coarse=1.1, fine=min(1.1, 1.1))
-    plot(model, ctx, rhoprofile, intputparams, img_path=img_path)
+    newpath_withoutext = sham_utilities.gen_new_path_withoutext(dump_prefix)
+    plot(fig, model, ctx, rhotarget, inputparams, img_path=img_path)
     dump(model, dump_path=dump_path)
+    return fig
 
 
-def loop(t_stop, model, ctx, rhoprofile, intputparams, dump_prefix):
+def loop(fig, t_stop, model, ctx, rhotarget, inputparams, dump_prefix):
     for t in t_stop:
         model.change_htolerances(coarse=1.3, fine=min(1.3, 1.1))
         model.evolve_until(t)
@@ -220,90 +218,142 @@ def loop(t_stop, model, ctx, rhoprofile, intputparams, dump_prefix):
         dump_path = f"{newpath_withoutext}.sham"
         img_path = f"{newpath_withoutext}.png"
         dump(model, dump_path=dump_path)  # **before** plotting
-        fig = plot(model, ctx, rhoprofile, intputparams, img_path=img_path)
-
-    return fig
+        plot(fig, model, ctx, rhotarget, inputparams, img_path=img_path)
 
 
-restart = True
 # ! Simulation parameters
 if __name__ == "__main__":
     model, ctx, codeu = initModel()
-    # if restart:
-    #     model, ctx, ucode = reloadModel(dump_prefix)
+
+    #####################################
+    restart = False
     SG = True
-    n = 1
-    gamma = 1.0 + (1 / n)
-    K = 1
-    dump_prefix = f"cd10_n{n}_"
+    nb_dumps = 90
 
-    Npart_i = 20
-    xmax = get_radius(K, codeu)
-    dr = 2 * xmax / (Npart_i - 1)
+    N_target = 2000
 
-    estimated_Npart = (xmax / dr) ** 3 * (xmax**3 / (4 * np.pi * xmax**3 / 3))
-    pmass = 1 / estimated_Npart
-    dump_prefix += f"1e{int(np.log10(abs(estimated_Npart)))}_"
+    eos = "fermi"
+    # eos = "polytropic"
+    ######################################
+
+    if eos == "fermi":
+        # Then, the input is y0
+        y0 = 1.5
+        mu_e = 2
+        eos = {"name": "fermi", "id": f"f{mu_e}", "values": {"mu_e": mu_e}}
+        tabx, tabrho = stretchmap_utilities.solve_Chandrasekhar(y0)
+        arr1inds = tabx.argsort()
+        tabx = tabx[arr1inds]
+        tabrho = tabrho[arr1inds]
+        xmax = np.max(tabx)
+        rhoprofiletxt = "solve_ivp(RK45)"
+        rhotarget = np.array([tabx, tabrho])
+        mtot = stretchmap_utilities.integrate_target(rhotarget)
+        eps_plummer = np.pow(
+            (mtot / (N_target / 2)) / np.max(tabrho), 1.0 / 3.0
+        ) ** 3 / (
+            N_target / 2
+        )  # h min à peu près
+    elif eos == "polytropic":
+        # Then, the input is mtot
+        eps_plummer = 1e-2
+        mtot = 3
+        K = 1
+        n = 1
+        eos = {
+            "name": "polytropic",
+            "id": f"n{n}",
+            "values": {"n": n, "gamma": 1 + 1 / n, "K": K},
+        }
+        xmax = get_radius_n1(eos["values"]["K"], codeu)
+        rhoprofile = lambda r: np.sinc(r / xmax)
+        rhoprofiletxt = "sinc"
+        tabx = np.linspace(0, xmax)
+        tabrho = rhoprofile(tabx)
+        rhotarget = np.array([tabx, tabrho])
+
+    dump_prefix = f"{eos["id"]}_"
+
+    part_vol = ((2 * xmax) ** 3) / N_target
+    HCP_PACKING_DENSITY = 0.74
+    part_vol_lattice = HCP_PACKING_DENSITY * part_vol
+    dr = (part_vol_lattice / ((4.0 / 3.0) * np.pi)) ** (1.0 / 3.0)
+    pmass = mtot / N_target
+    print(f"Guessing {N_target} particles")
+    dump_prefix += f"{int(N_target/1000)}k_"
+
     if SG:
         dump_prefix += "SG_"
+    dump_prefix += "cd10_"
 
-    if n == 5:
-        rhoprofile = lambda r: 1 / np.sqrt(1 + (r**2) / 3)
-        rhoprofiletxt = "1/np.sqrt(1+(r**2)/3)"
-    elif n == 1:
-        rhoprofile = lambda r: np.sinc(adim_r(r, codeu) / np.pi)
-        rhoprofiletxt = "sinc"
-    # rhoprofile = lambda r: 1/np.sqrt(1+r**2)
-    # rhoprofile = lambda r: 1/((r+0.1)**2)
-    # rhoprofile = lambda r: 1/((r+0.01)**2)
-    # rhoprofile = lambda r:
-    # rhoprofile = lambda r: np.sinc(r)
-    # rhoprofile = np.sinc
-    nb_dumps = 180
-    tf = 3
+    # tf = 2 * xmax ** (1.5)
+    # tf = 1
+    tf = 1e-40
+    # nb_dumps = 4
+    print(f"xmax{xmax:.1e} tf{tf:.1e}")
+
     t_stop = np.linspace(0, tf, nb_dumps)
 
-    intputparams = {
+    inputparams = {
         "nb_dumps": nb_dumps,
         "tf": tf,
-        "pmass": f"{pmass:.1e}",
+        "pmass": f"{pmass:.1e}",  # TODO not anymore...
         "dr": dr,
         "xmax": xmax,
-        "K": K,
-        "n": n,
+        "eos": eos["name"],
         "target": rhoprofiletxt,
         "SG": SG,
+        "eps_plummer": eps_plummer,
     }
+    for param, value in eos["values"].items():
+        inputparams[param] = value
 
     ## ! Set the scene<
     folder_path = handle_dump(dump_prefix)
-    write_json_params(intputparams, json_path=f"{folder_path}/inputparams.json")
+    write_json_params(inputparams, json_path=f"{folder_path}/inputparams.json")
 
     ## ! Stretchmapping
-    model, ctx = setupModel(
-        model, codeu, dr, xmax, pmass, rhoprofile=rhoprofile, K=K, gamma=gamma, SG=SG
-    )
+
+    if restart:
+        model, ctx = reloadModel(dump_prefix)
+    else:
+        model, ctx = setupModel(
+            model,
+            codeu,
+            dr,
+            xmax,
+            mtot=mtot,
+            rhotarget=rhotarget,
+            eos=eos,
+            SG=SG,
+            epsplummer=eps_plummer,
+        )
     Npartfinal = model.get_total_part_count()
+    pmassfinal = model.get_particle_mass()
     print(
-        f"Ended up with {Npartfinal} particles so Mtot={Npartfinal*pmass}, testing init"
+        f"Ended up with {Npartfinal} particles so Mtot={Npartfinal*pmassfinal}, testing init"
     )
+    # model.set_particle_mass(mtot / Npartfinal)
+    # print(f"mpart should be {mtot / Npartfinal}")
+    # print(f"curretly it is {model.get_particle_mass()}")
+    # print(
+    #     f"Ended up with {Npartfinal} particles so Mtot={Npartfinal*model.get_particle_mass()}, testing init"
+    # )
 
     ## ! Making sure everything nicely settled
-    test_init(model, ctx, rhoprofile, intputparams, dump_prefix)
+    fig = test_init(model, ctx, rhotarget, inputparams, dump_prefix)
     print("Init test completed, running")
     ## ! Running
-    fig = loop(t_stop, model, ctx, rhoprofile, intputparams, dump_prefix)
+    loop(fig, t_stop, model, ctx, rhotarget, inputparams, dump_prefix)
     print("Running completed, showing final plot")
-    ## ! Final plot
-    # for fig in figs:
-    fig.show()
     ## ! Video
-    fps = px_utilities.compute_fps(intputparams)
+    fps = px_utilities.compute_fps(inputparams)
+    fps = 1
     pattern_png = f"{folder_path}/*.png"
     filemp4 = f"{folder_path}/{dump_prefix}.mp4"
     px_utilities.movie(pattern_png, filemp4, fps)
 
 
-# ./shamrock --sycl-cfg 0:0 --loglevel 1 --rscript ./test_n5.py
+# ./shamrock --sycl-cfg 0:0 --loglevel 1 --rscript ./test_f2.py
 ## ? Warning: the corrector tolerance are broken the step will be re rerunned                                                                                                                                    [BasicGasSPH][rank=0]
 # ? eps_v = 0.06158665025247084 ???
