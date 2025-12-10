@@ -286,9 +286,9 @@ if __name__ == "__main__":
         dump_prefix += "SG_"
     dump_prefix += "cd10_"
 
-    # tf = 2 * xmax ** (1.5)
+    tf = 2 * xmax ** (1.5)
     # tf = 1
-    tf = 1e-40
+    # tf = 1e-40
     # nb_dumps = 4
     print(f"xmax{xmax:.1e} tf{tf:.1e}")
 
@@ -354,6 +354,6 @@ if __name__ == "__main__":
     px_utilities.movie(pattern_png, filemp4, fps)
 
 
-# ./shamrock --sycl-cfg 0:0 --loglevel 1 --rscript ./test_f2.py
+# ./shamrock --sycl-cfg 0:0 --loglevel 1 --rscript ./test_fermi.py
 ## ? Warning: the corrector tolerance are broken the step will be re rerunned                                                                                                                                    [BasicGasSPH][rank=0]
 # ? eps_v = 0.06158665025247084 ???
