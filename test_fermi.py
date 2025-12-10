@@ -168,7 +168,8 @@ def plot(fig, img_path, model, ctx, rhotarget, inputparams, eos=None):
     else:
         px_utilities.update_px_3d_and_rho(fig, model, ctx, img_path, inputparams)
     print("I will write this image in", img_path)
-
+    firstimg_path = img_path[:-5] + "0" + img_path[-4:]
+    print("You might wanna check", firstimg_path)
     fig.write_image(img_path)
 
     return fig
@@ -198,7 +199,6 @@ def test_init(model, ctx, rhotarget, inputparams, dump_prefix):
     img_path = f"{newpath_withoutext}.png"
     dump(model, dump_path=dump_path)  # **before** plotting
     fig = plot(None, img_path, model, ctx, rhotarget, inputparams, eos)
-    # fig.show()
     model.change_htolerances(coarse=1.3, fine=min(1.3, 1.1))
     model.evolve_once_override_time(0.0, 0.0)
     model.change_htolerances(coarse=1.1, fine=min(1.1, 1.1))
@@ -207,6 +207,7 @@ def test_init(model, ctx, rhotarget, inputparams, dump_prefix):
     dump_path = f"{newpath_withoutext}.sham"
     plot(fig, img_path, model, ctx, rhotarget, inputparams)
     dump(model, dump_path=dump_path)
+    # fig.show()
     return fig
 
 
@@ -229,9 +230,9 @@ if __name__ == "__main__":
     #####################################
     restart = False
     SG = True
-    nb_dumps = 90
+    nb_dumps = 40
 
-    N_target = 2000
+    N_target = 20000
 
     eos = "fermi"
     # eos = "polytropic"
@@ -241,18 +242,23 @@ if __name__ == "__main__":
 
     if eos == "fermi":
         # Then, the input is y0
-        y0 = 1.5
+        y0 = 5
         mu_e = 2
-        tabx, tabrho = su.solve_Chandrasekhar(y0)
+        tabx, tabrho = su.solve_Chandrasekhar(y0, mu_e)
         tabx /= su.Rsol
         tabrho /= su.density
+
         arr1inds = tabx.argsort()
         tabx = tabx[arr1inds]
         tabrho = tabrho[arr1inds]
-        xmax = np.max(tabx)
+        xmax = tabx[-1]
         rhoprofiletxt = "solve_ivp(RK45)"
         rhotarget = np.array([tabx, tabrho])
         mtot_target = su.integrate_target(rhotarget)
+        print("max density", np.max(tabrho))
+        print("mean density", np.mean(tabrho))
+        print("radius", np.max(tabx))
+        print("mtot integrated", mtot_target)
         eps_plummer = np.pow(
             (mtot_target / (N_target / 2)) / np.max(tabrho), 1.0 / 3.0
         ) ** 3 / (
@@ -260,6 +266,7 @@ if __name__ == "__main__":
         )  # h min à peu près
         eos = {"name": "fermi", "id": f"f{mu_e}", "values": {"mu_e": mu_e}}
         inputparams["y0"] = y0
+        inputparams["mu_e"] = mu_e
     elif eos == "polytropic":
         # Then, the input is mtot_target
         eps_plummer = 1e-2
@@ -292,10 +299,10 @@ if __name__ == "__main__":
         dump_prefix += "SG_"
     dump_prefix += "cd10_"
 
-    tf = 2 * xmax ** (1.5)
+    tf = np.sqrt(xmax**3 / mtot_target)
     # tf = 1
-    # tf = 1e-40
-    # nb_dumps = 4
+    # tf = 5e-2
+    nb_dumps = 10
     print(f"xmax{xmax:.1e} tf{tf:.1e}")
 
     t_stop = np.linspace(0, tf, nb_dumps)
@@ -303,7 +310,7 @@ if __name__ == "__main__":
     inputparams["nb_dumps"] = nb_dumps
     inputparams["tf"] = tf
     inputparams["pmass"] = f"{pmass:.1e}"  # TODO not anymore..
-    inputparams["mtot_target"] = mtot_target  # TODO not anymore..
+    inputparams["mtot_target"] = mtot_target
     inputparams["dr"] = dr
     inputparams["xmax"] = xmax
     inputparams["eos"] = eos["name"]
@@ -354,10 +361,11 @@ if __name__ == "__main__":
     print("Running completed, showing final plot")
     ## ! Video
     fps = px_utilities.compute_fps(inputparams)
-    fps = 1
+    # fps = 2
     pattern_png = f"{folder_path}/*.png"
     filemp4 = f"{folder_path}/{dump_prefix}.mp4"
     px_utilities.movie(pattern_png, filemp4, fps)
+    print(f"movie: {filemp4}")
 
 
 # ./shamrock --sycl-cfg 0:0 --loglevel 1 --rscript ./test_fermi.py

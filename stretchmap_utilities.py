@@ -25,31 +25,59 @@ def dS(r, dim=1):
 
 
 def integrate_target(target, dim=3):
-    dr = np.diff(target[0])
-    return np.sum(target[1, :-1] * dr * dS(target[0, :-1], dim))
+    """
+    target[0] : r
+    target[1] : rho
+    """
+    r = np.asarray(target[0])
+    rho = np.asarray(target[1])
+
+    # guard : formes attendues
+    if r.ndim != 1 or rho.ndim != 1 or r.shape[0] != rho.shape[0]:
+        raise ValueError("target must contains arrays of same lenght")
+
+    integrand = rho * dS(r, dim)
+    return np.trapezoid(integrand, r)
 
 
 # Constantes fondamentales
-h = 6.62607015e-34  # Constante de Planck (J s)
-c = 2.99792458e8  # Vitesse de la lumière (m/s)
-m_e = 9.1093837015e-31  # Masse de l'électron (kg)
-m_p = 1.67262192369e-27  # Masse du proton (kg)
+# h = 6.62607015e-34  # Constante de Planck (J s)
+# c = 2.99792458e8  # Vitesse de la lumière (m/s)
+# m_e = 9.1093837015e-31  # Masse de l'électron (kg)
+# m_p = 1.67262192369e-27  # Masse du proton (kg)
 # Poids moléculaire moyen par électron (μ=2.0 pour les naines blanches typiques composées de C/O)
-mu = 2.0
-G = 6.67e-11
+# mu = 2.0
 
 Msol = 1.989e30
 Rsol = 6.957e8
-rhoadim = Msol / (Rsol**3)
+Tsol = np.sqrt(Rsol**3 / (Msol * 6.67e-11))
+# coeff_tpf = 2.04399770085e11
+# coeff_tpf = 2.043997700850399e-3
+# ALPHA = np.pow(3 / (8 * np.pi), 1.0 / 3) * coeff_tpf
+# # coeff_p = 5.73180502079e-9
+# coeff_p = 5731.80502078931e18
+# BETA = coeff_p * np.pi / 3
+ALPHA = 0.10064082802851738e-2  # /mu_e^{1/3}
+BETA = 6002.332181706928e18
+C1 = 981.0189489250643e6  # *mu_e
+RA = 0.02439045021149552 * 10 ** (8.5)  # /mu_e
+
+density = Msol / Rsol**3
+pressure = Msol / Rsol / Tsol**2
+velocity = Rsol / Tsol
 
 
-def get_rho(phi, y0, rho0):
-    return (
-        rho0
-        * np.pow(y0, 3)
-        / np.pow(y0**2 - 1, 3.0 / 2.0)
-        * np.pow(phi**2 - 1 / y0**2, 3.0 / 2.0)
-    )
+Msol = 1.989e30
+Rsol = 6.957e8
+
+
+# def get_rho(phi, y0, rho0):
+#     return (
+#         rho0
+#         * np.pow(y0, 3)
+#         / np.pow(y0**2 - 1, 3.0 / 2.0)
+#         * np.pow(phi**2 - 1 / y0**2, 3.0 / 2.0)
+#     )
 
 
 def chandrasekhar_ode(eta, y, y0):
@@ -94,7 +122,7 @@ def surface_event(eta, y, y0):
     return u - (1 / y0)
 
 
-def solve_Chandrasekhar(y_0):
+def solve_Chandrasekhar(y_0, mu_e):
     """
     Return in SI
 
@@ -129,33 +157,24 @@ def solve_Chandrasekhar(y_0):
     eta_s = sol.t_events[0][0]
     num_points = 100
     eta_discret = np.linspace(sol.t[0], eta_s, num_points)
-    discrete_sol = sol.sol(eta_discret)[0, :]
+    discrete_Phi = sol.sol(eta_discret)[0, :]
 
-    C1 = (8 * np.pi * m_e**3 * c**3 * m_p * mu) / (3 * h**3)
+    # C1 = (8 * np.pi * m_e**3 * c**3 * m_p * mu) / (3 * h**3)
 
-    C2 = (np.pi * m_e**4 * c**5) / (3 * h**3)
-    alpha = np.sqrt(2 * C2 / (np.pi * G)) / (C1 * y_0)
-    rho_0 = C1 * np.pow(y_0 - 1, 1.5)
+    # C2 = (np.pi * m_e**4 * c**5) / (3 * h**3) = BETA
+    # r_a = np.sqrt(2 * C2 / (np.pi * G)) / (C1 * y_0)
+    # rho_0 = C1 * np.pow(y_0 - 1, 1.5)
 
-    R = alpha * eta_discret
-    RHO = get_rho(discrete_sol, y_0, rho_0)
+    R = RA * eta_discret / (y_0 * mu_e)
+    RHO = C1 * mu_e * ((y_0 * discrete_Phi) ** 2 - 1) ** (1.5)
 
     print(R.shape, RHO.shape)
 
     return R, RHO
 
 
-Msol = 1.989e30
-Rsol = 6.957e8
-Tsol = np.sqrt(Rsol**3 / (Msol * 6.67e-11))
-alpha = 2.04399770085e11
-coeff_tpf = np.pow(3 / (8 * np.pi), 1.0 / 3) * alpha
-beta = 5.73180502079e-9
-coeff_p = beta * np.pi / 3
-
-density = Msol / Rsol**3
-pressure = Msol / Rsol / Tsol**2
-velocity = Rsol / Tsol
+def tilde_pf(ALPHA, rho, mu_e):
+    return ALPHA * rho ** (1.0 / 3.0) / mu_e ** (1.0 / 3)
 
 
 def P_fermi(rho, mu_e):
@@ -164,10 +183,10 @@ def P_fermi(rho, mu_e):
 
     :param rho: density in SI
     """
-    tpf = coeff_tpf * rho ** (1.0 / 3.0) / mu_e
+    tpf = tilde_pf(ALPHA, rho, mu_e)
     tpf2 = tpf * tpf
-    P = coeff_p * tpf * (np.sqrt(tpf2) + 1) * (2 * tpf2 - 3) + 3 * np.asinh(tpf)
-    return P * pressure
+    P = BETA * (tpf * np.sqrt(tpf2 + 1) * (2 * tpf2 - 3) + 3 * np.asinh(tpf))
+    return P
 
 
 def cs_fermi(rho, mu_e):
@@ -176,9 +195,16 @@ def cs_fermi(rho, mu_e):
 
     :param rho: density in SI
     """
-    tpf = alpha * rho ** (1.0 / 3.0)
-    cs2 = tpf**4 / (mu_e * np.sqrt(1 + tpf**2) * rho ** (2.0 / 3.0))
-    return np.sqrt(cs2) * velocity
+    tpf = tilde_pf(ALPHA, rho, mu_e)
+    cs2 = (
+        8
+        * ALPHA
+        * BETA
+        / (3 * mu_e ** (1.0 / 3.0))
+        * tpf**4
+        / (np.sqrt(1 + tpf**2) * rho ** (2.0 / 3.0))
+    )
+    return np.sqrt(cs2)
 
 
 def P_polytropic(rho, K, gamma):
@@ -186,7 +212,8 @@ def P_polytropic(rho, K, gamma):
 
 
 def cs_polytropic(rho, K, gamma):
-    return gamma * P_polytropic(rho, K, gamma) / rho
+    cs2 = gamma * P_polytropic(rho, K, gamma) / rho
+    return np.sqrt(cs2)
 
 
 def get_p_and_cs_func(eos):
@@ -213,26 +240,38 @@ def get_p_and_cs_func(eos):
 
 
 if __name__ == "__main__":
+    print(Msol, Rsol, Tsol)
+    print(pressure, density, velocity)
     c = 2.99792458
     h = 6.62607015
     me = 9.1093837
     mp = 1.67262192
+    G = 6.67430
 
     c_exp = 8
-    h_exp = -24
+    h_exp = -34
     me_exp = -31
-    mp_exp = -37
+    mp_exp = -27
+    G_exp = -11
 
-    alpha = h / (mp ** (1.0 / 3.0) * me * c)
-    _3alpha_exp = 3 * h_exp - mp_exp - 3 * me_exp - 3 * c_exp
+    ALPHA = (3 / (8 * np.pi)) ** (1.0 / 3) * h / (mp ** (1.0 / 3.0) * me * c)
+    _3ALPHA_exp = 3 * h_exp - mp_exp - 3 * me_exp - 3 * c_exp
 
-    print(f"alpha {alpha} *10^{_3alpha_exp}/3 ")
+    print(f"ALPHA = {ALPHA} *e{_3ALPHA_exp}/3 ")
 
-    beta = me**4 * c**5 / h**3
-    beta_exp = me_exp * 4 + c_exp * 5 - h_exp * 3
+    BETA = (np.pi / 3) * me**4 * c**5 / h**3
+    BETA_exp = me_exp * 4 + c_exp * 5 - h_exp * 3
 
-    print(f"beta {beta} *10^{beta_exp} ")
+    print(f"BETA = {BETA} *e{BETA_exp} ")
 
+    C1 = (me * c / h) ** 3 * mp * (8 * np.pi / 3)  # a mutiplier par mu_e
+    C1_exp = (me_exp + c_exp - h_exp) * 3 + mp_exp
+
+    print(f"C1 = {C1} *e{C1_exp} ")
+
+    RA = (1 / C1) * np.sqrt(2 * BETA / (np.pi * G))
+    _2RA_exp = -2 * C1_exp + (BETA_exp - G_exp)
+    print(f"RA = {RA} *e{_2RA_exp}/2 ")  # a diviser par (y_0*mu_e)
     # import matplotlib.pyplot as plt
 
     # ###########################################

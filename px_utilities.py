@@ -45,6 +45,7 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, eos):
     t = model.get_time()
     mpart = model.get_particle_mass()
     Pos = data["xyz"]
+
     R = np.linalg.norm(Pos, axis=1)
 
     mtot_target = input_params["mtot_target"]
@@ -58,8 +59,8 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, eos):
     if "pressure" in data:
         haspressure = True
         pressure_data = data["pressure"]
+    # haspressure = False
 
-        # figrho = go.Figure(layout_yaxis_range=[0, 1.1 * np.max(rho0 * ytarget)])
     nrows = 2
     ncols = 2
     fig = make_subplots(
@@ -70,6 +71,7 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, eos):
             [{"secondary_y": haspressure}, {}],
         ],
         horizontal_spacing=0.15,
+        vertical_spacing=0.05,
         column_widths=[0.6, 0.4],
         subplot_titles=("Density profile", "Soundspeed and Pressure profiles", ""),
     )
@@ -102,8 +104,8 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, eos):
     )
 
     fig.update_yaxes(range=[0, None], row=1, col=1)
-    fig.update_yaxes(range=[0, None], row=2, col=1, secondary_y=False)
-    fig.update_yaxes(range=[0, None], row=2, col=1, secondary_y=True)
+    # fig.update_yaxes(range=[0, None], row=2, col=1, secondary_y=False)
+    # fig.update_yaxes(range=[0, None], row=2, col=1, secondary_y=True)
 
     # ! 3D scatter
     fig.add_trace(
@@ -117,11 +119,9 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, eos):
                 color=Rho,
                 colorscale="Viridis",
                 colorbar=dict(
-                    title=r"$\\rho$",
+                    title="Density",
                     tickfont=dict(size=24),
                     xanchor="left",
-                    tickprefix=r"$",
-                    ticksuffix=r"$",
                     exponentformat="e",
                 ),
                 cmin=0,
@@ -217,11 +217,19 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, eos):
         )
     fig.update_xaxes(row=1, col=1, title_text=r"$r/R_\odot$")
     fig.update_yaxes(
-        row=1, col=1, title_text=r"$\rho$", title_font=dict(color=density_color)
+        row=1,
+        col=1,
+        title_text=r"$\rho$",
+        title_font=dict(color=density_color),
+        tickfont=dict(color=density_color),
     )
     fig.update_xaxes(row=2, col=1, title_text=r"$r/R_\odot$")
     fig.update_yaxes(
-        row=2, col=1, title_text=r"$c_s$", title_font=dict(color=soundspeed_color)
+        row=2,
+        col=1,
+        title_text=r"$c_s$",
+        title_font=dict(color=soundspeed_color),
+        tickfont=dict(color=soundspeed_color),
     )
     if haspressure:
         fig.update_yaxes(
@@ -229,6 +237,7 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, eos):
             col=1,
             title_text=r"$P$",
             title_font=dict(color=pressure_color),
+            tickfont=dict(color=pressure_color),
             secondary_y=True,
         )
     fig.update_layout(
@@ -277,6 +286,25 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, eos):
         ),
     )
 
+    # fig.add_annotation(
+    #     text="Density profile",
+    #     xref="paper",
+    #     yref="paper",
+    #     x=0,  # left column center (approx)
+    #     y=0.98,
+    #     showarrow=False,
+    #     font=dict(size=16),
+    # )
+    # fig.add_annotation(
+    #     text="Soundspeed and Pressure profiles",
+    #     xref="paper",
+    #     yref="paper",
+    #     x=0,  # right/top area (approx) adjust as required
+    #     y=0.5,
+    #     showarrow=False,
+    #     font=dict(size=16),
+    # )
+
     return fig
 
 
@@ -285,7 +313,6 @@ def update_px_3d_and_rho(fig, model, ctx, img_path, input_params):
     t = model.get_time()
     mpart = model.get_particle_mass()
 
-    cs_data = data["soundspeed"]
     Pos = data["xyz"]
     R = np.linalg.norm(Pos, axis=1)
     Rho = get_rho_values(data, mpart)
@@ -298,6 +325,19 @@ def update_px_3d_and_rho(fig, model, ctx, img_path, input_params):
         y=Rho,
     )
 
+    # Trace 2 : Scatter3D
+    fig.data[2].update(
+        x=Pos[:, 0],
+        y=Pos[:, 1],
+        z=Pos[:, 2],
+        marker_color=Rho,
+        # marker=dict(
+        #     cmin=0,
+        #     cmax=np.max(Rho),
+        # ),
+    )
+
+    cs_data = data["soundspeed"]
     fig.data[3].update(
         x=R,
         y=cs_data,
@@ -308,8 +348,7 @@ def update_px_3d_and_rho(fig, model, ctx, img_path, input_params):
 
     if "pressure" in data:
         pressure_data = data["pressure"]
-        print(pressure_data)
-        fig.data[3].update(
+        fig.data[5].update(
             x=R,
             y=pressure_data,
         )
@@ -327,18 +366,6 @@ def update_px_3d_and_rho(fig, model, ctx, img_path, input_params):
     sorted_Rho = Rho[arr1inds]
     est_mass = su.integrate_target(np.array([sorted_R, sorted_Rho]))
     print(f"{est_mass}")
-
-    # Trace 2 : Scatter3D
-    fig.data[2].update(
-        x=Pos[:, 0],
-        y=Pos[:, 1],
-        z=Pos[:, 2],
-        marker_color=Rho,
-        # marker=dict(
-        #     cmin=0,
-        #     cmax=np.max(Rho),
-        # ),
-    )
 
     fig.update_layout(
         title_text=f"{img_path} t={t:.2e}",
@@ -387,8 +414,8 @@ def movie(pattern_png, filemp4, fps):
 
 def compute_fps(inputparams):
     """
-    so that the duration of the movie is proportional to the duration of the run
+    so that the duration of the movie is 4 sec
     """
     nb_dumps = inputparams["nb_dumps"]
-    tf = inputparams["tf"]
-    return int((nb_dumps / tf) * 2 / 3)
+    # tf = inputparams["tf"]
+    return int(nb_dumps / 4)

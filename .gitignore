@@ -15,3 +15,5 @@ antipressure.py
 *.log
 *.gz
 *.toc
+
+*.png
