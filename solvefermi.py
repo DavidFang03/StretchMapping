@@ -1,5 +1,5 @@
 import numpy as np
-import stretchmap_utilities
+import stretchmap_utilities as su
 import matplotlib.pyplot as plt
 
 # Constantes fondamentales
@@ -16,44 +16,50 @@ Rsol = 6.957e8
 rhoadim = Msol / (Rsol**3)
 
 
-def P_fermi(rho):
-    pf = rho ** (1.0 / 3.0)
-    pf2 = pf * pf
-    return pf * (np.sqrt(pf2) + 1) * (2 * pf2 - 3) + 3 * np.asinh(pf)
-
-
-def cs_fermi(rho):
-    pf = rho ** (1.0 / 3.0)
-    return pf**4 / (np.sqrt(1 + pf**2) * rho ** (2.0 / 3.0))
-
-
 if __name__ == "__main__":
+    plt.close("all")
 
     ###########################################
     y0_value = 1.5  # Exemple : paramètre de relativité
+    mu_e = 2
     ###########################################
 
-    R, RHO = stretchmap_utilities.solve_Chandrasekhar(y0_value)
+    R, RHO = su.solve_Chandrasekhar(y0_value)  # SI
 
-    pfermi_rho = P_fermi(RHO)
-    cs_rho = cs_fermi(RHO[:-1])
-    print(cs_rho)
-    fig, ax = plt.subplots()
-    ax.plot(R, RHO, label="density")
-    ax.plot(R, pfermi_rho * np.max(RHO) / np.max(pfermi_rho), label="pressure")
-    ax.plot(R[:-1], cs_rho * np.max(RHO) / np.max(cs_rho), label="soundspeed")
-    ax.set_xlabel("R")
+    pfermi_rho = su.P_fermi(RHO, mu_e) / su.pressure
+    cs_rho = su.cs_fermi(RHO[:-1], mu_e) / su.velocity
+    R /= su.Rsol
+    fig, axs = plt.subplots(3)
+
+    titles = ["Density", "Pressure", "Soundspeed"]
+    labelsx = [r"$r/R_\odot$", r"$r/R_\odot$", r"$r/R_\odot$"]
+    labelsy = [r"$\rho$", r"$P$", r"$c_s$"]
+    colors = ["blue", "green", "magenta"]
+    X = [R, R, R[:-1]]
+    Y = [RHO, pfermi_rho, cs_rho]
+    for i, ax in enumerate(axs):
+        ax.plot(X[i], Y[i], label=f"$y_0={y0_value}$", color=colors[i])
+        ax.set_xlabel(labelsx[i])
+        ax.set_ylabel(labelsy[i])
+        ax.set_title(titles[i])
 
     figeos, axeos = plt.subplots()
     rho = np.linspace(0.01, 1, 100)
-    axeos.plot(rho, P_fermi(rho), label="pressure")
-    axeos.plot(rho, cs_fermi(rho), label="soundspeed")
-    axeos.set_xlabel("rho")
+    axeos.plot(rho, su.P_fermi(rho, mu_e), color="green", label="pressure")
+    axeos.plot(rho, su.cs_fermi(rho, mu_e), color="magenta", label="soundspeed")
+    axeos.set_xlabel(r"$\rho$")
     # axeos.set_ylabel("rho")
 
-    axes = [ax, axeos]
+    axes = [*axs, axeos]
     for ax in axes:
         ax.legend()
+
+    # for fg in [fig, figeos]:
+    #     fg.tight_layout(pad=0.4, w_pad=1, h_pad=1.0)
+    fig.subplots_adjust(left=0.3, right=1 - 0.3, hspace=0.5)
+    fig.suptitle(f"$y_0={y0_value}, \\mu_e={mu_e} $")
+
+    # plt.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
     plt.show()
 
 # sol.t_events[0] donne l'emplacement du rayon de surface eta_s

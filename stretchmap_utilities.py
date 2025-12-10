@@ -95,6 +95,11 @@ def surface_event(eta, y, y0):
 
 
 def solve_Chandrasekhar(y_0):
+    """
+    Return in SI
+
+    :param y_0: Description
+    """
     from scipy.integrate import solve_ivp
 
     # L'événement doit s'arrêter lorsque le signe change (is_terminal=True)
@@ -124,7 +129,7 @@ def solve_Chandrasekhar(y_0):
     eta_s = sol.t_events[0][0]
     num_points = 100
     eta_discret = np.linspace(sol.t[0], eta_s, num_points)
-    solution_discrète = sol.sol(eta_discret)[0, :]
+    discrete_sol = sol.sol(eta_discret)[0, :]
 
     C1 = (8 * np.pi * m_e**3 * c**3 * m_p * mu) / (3 * h**3)
 
@@ -132,27 +137,114 @@ def solve_Chandrasekhar(y_0):
     alpha = np.sqrt(2 * C2 / (np.pi * G)) / (C1 * y_0)
     rho_0 = C1 * np.pow(y_0 - 1, 1.5)
 
-    R = alpha * eta_discret / Rsol
-    RHO = get_rho(solution_discrète, y_0, rho_0) / rhoadim
+    R = alpha * eta_discret
+    RHO = get_rho(discrete_sol, y_0, rho_0)
 
     print(R.shape, RHO.shape)
 
     return R, RHO
 
 
+Msol = 1.989e30
+Rsol = 6.957e8
+Tsol = np.sqrt(Rsol**3 / (Msol * 6.67e-11))
+alpha = 2.04399770085e11
+coeff_tpf = np.pow(3 / (8 * np.pi), 1.0 / 3) * alpha
+beta = 5.73180502079e-9
+coeff_p = beta * np.pi / 3
+
+density = Msol / Rsol**3
+pressure = Msol / Rsol / Tsol**2
+velocity = Rsol / Tsol
+
+
+def P_fermi(rho, mu_e):
+    """
+    Pressure in SI, with SI input
+
+    :param rho: density in SI
+    """
+    tpf = coeff_tpf * rho ** (1.0 / 3.0) / mu_e
+    tpf2 = tpf * tpf
+    P = coeff_p * tpf * (np.sqrt(tpf2) + 1) * (2 * tpf2 - 3) + 3 * np.asinh(tpf)
+    return P * pressure
+
+
+def cs_fermi(rho, mu_e):
+    """
+    Soundspeed in SI, with SI input
+
+    :param rho: density in SI
+    """
+    tpf = alpha * rho ** (1.0 / 3.0)
+    cs2 = tpf**4 / (mu_e * np.sqrt(1 + tpf**2) * rho ** (2.0 / 3.0))
+    return np.sqrt(cs2) * velocity
+
+
+def P_polytropic(rho, K, gamma):
+    return K * rho**gamma
+
+
+def cs_polytropic(rho, K, gamma):
+    return gamma * P_polytropic(rho, K, gamma) / rho
+
+
+def get_p_and_cs_func(eos):
+    """
+    get_p_and_cs_func
+    Returns a tuple of functions (P then cs) that take solar units and return solar units
+
+    :param eos: Description
+    """
+    if eos["name"] == "fermi":
+        mu_e = eos["values"]["mu_e"]
+        return [
+            lambda rho: P_fermi(rho * density, mu_e) / pressure,
+            lambda rho: cs_fermi(rho * density, mu_e) / velocity,
+        ]
+        # return P_fermi, cs_fermi
+    elif eos["name"] == "polytropic":
+        K = eos["values"]["K"]
+        gamma = 1 + 1 / eos["values"]["n"]
+        return [
+            lambda rho: P_polytropic(rho * density, K, gamma) / pressure,
+            lambda rho: cs_polytropic(rho * density, K, gamma) / velocity,
+        ]
+
+
 if __name__ == "__main__":
-    import matplotlib.pyplot as plt
+    c = 2.99792458
+    h = 6.62607015
+    me = 9.1093837
+    mp = 1.67262192
 
-    ###########################################
-    y0_value = 1.5  # Exemple : paramètre de relativité
-    ###########################################
+    c_exp = 8
+    h_exp = -24
+    me_exp = -31
+    mp_exp = -37
 
-    R, RHO = solve_Chandrasekhar(y0_value)
+    alpha = h / (mp ** (1.0 / 3.0) * me * c)
+    _3alpha_exp = 3 * h_exp - mp_exp - 3 * me_exp - 3 * c_exp
 
-    fig, ax = plt.subplots()
-    ax.plot(R, RHO)
+    print(f"alpha {alpha} *10^{_3alpha_exp}/3 ")
 
-    plt.show()
+    beta = me**4 * c**5 / h**3
+    beta_exp = me_exp * 4 + c_exp * 5 - h_exp * 3
+
+    print(f"beta {beta} *10^{beta_exp} ")
+
+    # import matplotlib.pyplot as plt
+
+    # ###########################################
+    # y0_value = 1.5  # Exemple : paramètre de relativité
+    # ###########################################
+
+    # R, RHO = solve_Chandrasekhar(y0_value)
+
+    # fig, ax = plt.subplots()
+    # ax.plot(R, RHO)
+
+    # plt.show()
 
 # sol.t_events[0] donne l'emplacement du rayon de surface eta_s
 # sol.y[0] est la solution pour Phi, sol.y[1] est la solution pour Phi'

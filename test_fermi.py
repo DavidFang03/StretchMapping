@@ -3,7 +3,7 @@ import numpy as np
 import os
 import glob
 import sham_utilities
-import stretchmap_utilities
+import stretchmap_utilities as su
 import px_utilities
 import ffmpeg
 
@@ -94,7 +94,7 @@ def initModel():
     return model, ctx, codeu
 
 
-def setupModel(model, codeu, dr, xmax, mtot, rhotarget, eos, SG, epsplummer):
+def setupModel(model, codeu, dr, xmax, mtot_target, rhotarget, eos, SG, eps_plummer):
     cfg = model.gen_default_config()
     cfg.set_artif_viscosity_VaryingCD10(
         alpha_min=0.0, alpha_max=1, sigma_decay=0.1, alpha_u=1, beta_AV=2
@@ -140,7 +140,7 @@ def setupModel(model, codeu, dr, xmax, mtot, rhotarget, eos, SG, epsplummer):
         box_max=bmax,
         tabx=tabx,
         tabrho=tabrho,
-        mtot=mtot,
+        mtot=mtot_target,
     )
     setup.apply_setup(stretched_hcp)
 
@@ -156,18 +156,17 @@ def dump(model, dump_path):
     print(f"Dumped {dump_path}")
 
 
-def plot(fig, model, ctx, rhotarget, inputparams, img_path):
-    data = ctx.collect_data()
+def plot(fig, img_path, model, ctx, rhotarget, inputparams, eos=None):
     mpart = model.get_particle_mass()
-    t = model.get_time()
+
     inputparams["pmass"] = mpart
 
     if fig is None:
         fig = px_utilities.px_3d_and_rho(
-            data, mpart, t, img_path, rhotarget, inputparams
+            model, ctx, img_path, rhotarget, inputparams, eos
         )
     else:
-        px_utilities.update_px_3d_and_rho(fig, data, mpart, t, img_path, inputparams)
+        px_utilities.update_px_3d_and_rho(fig, model, ctx, img_path, inputparams)
     print("I will write this image in", img_path)
 
     fig.write_image(img_path)
@@ -198,13 +197,15 @@ def test_init(model, ctx, rhotarget, inputparams, dump_prefix):
     dump_path = f"{newpath_withoutext}.sham"
     img_path = f"{newpath_withoutext}.png"
     dump(model, dump_path=dump_path)  # **before** plotting
-    fig = plot(None, model, ctx, rhotarget, inputparams, img_path)
+    fig = plot(None, img_path, model, ctx, rhotarget, inputparams, eos)
     # fig.show()
     model.change_htolerances(coarse=1.3, fine=min(1.3, 1.1))
     model.evolve_once_override_time(0.0, 0.0)
     model.change_htolerances(coarse=1.1, fine=min(1.1, 1.1))
     newpath_withoutext = sham_utilities.gen_new_path_withoutext(dump_prefix)
-    plot(fig, model, ctx, rhotarget, inputparams, img_path=img_path)
+    img_path = f"{newpath_withoutext}.png"
+    dump_path = f"{newpath_withoutext}.sham"
+    plot(fig, img_path, model, ctx, rhotarget, inputparams)
     dump(model, dump_path=dump_path)
     return fig
 
@@ -218,7 +219,7 @@ def loop(fig, t_stop, model, ctx, rhotarget, inputparams, dump_prefix):
         dump_path = f"{newpath_withoutext}.sham"
         img_path = f"{newpath_withoutext}.png"
         dump(model, dump_path=dump_path)  # **before** plotting
-        plot(fig, model, ctx, rhotarget, inputparams, img_path=img_path)
+        plot(fig, img_path, model, ctx, rhotarget, inputparams)
 
 
 # ! Simulation parameters
@@ -234,30 +235,35 @@ if __name__ == "__main__":
 
     eos = "fermi"
     # eos = "polytropic"
+
     ######################################
+    inputparams = {}
 
     if eos == "fermi":
         # Then, the input is y0
         y0 = 1.5
         mu_e = 2
-        eos = {"name": "fermi", "id": f"f{mu_e}", "values": {"mu_e": mu_e}}
-        tabx, tabrho = stretchmap_utilities.solve_Chandrasekhar(y0)
+        tabx, tabrho = su.solve_Chandrasekhar(y0)
+        tabx /= su.Rsol
+        tabrho /= su.density
         arr1inds = tabx.argsort()
         tabx = tabx[arr1inds]
         tabrho = tabrho[arr1inds]
         xmax = np.max(tabx)
         rhoprofiletxt = "solve_ivp(RK45)"
         rhotarget = np.array([tabx, tabrho])
-        mtot = stretchmap_utilities.integrate_target(rhotarget)
+        mtot_target = su.integrate_target(rhotarget)
         eps_plummer = np.pow(
-            (mtot / (N_target / 2)) / np.max(tabrho), 1.0 / 3.0
+            (mtot_target / (N_target / 2)) / np.max(tabrho), 1.0 / 3.0
         ) ** 3 / (
             N_target / 2
         )  # h min à peu près
+        eos = {"name": "fermi", "id": f"f{mu_e}", "values": {"mu_e": mu_e}}
+        inputparams["y0"] = y0
     elif eos == "polytropic":
-        # Then, the input is mtot
+        # Then, the input is mtot_target
         eps_plummer = 1e-2
-        mtot = 3
+        mtot_target = 3
         K = 1
         n = 1
         eos = {
@@ -278,7 +284,7 @@ if __name__ == "__main__":
     HCP_PACKING_DENSITY = 0.74
     part_vol_lattice = HCP_PACKING_DENSITY * part_vol
     dr = (part_vol_lattice / ((4.0 / 3.0) * np.pi)) ** (1.0 / 3.0)
-    pmass = mtot / N_target
+    pmass = mtot_target / N_target
     print(f"Guessing {N_target} particles")
     dump_prefix += f"{int(N_target/1000)}k_"
 
@@ -294,17 +300,17 @@ if __name__ == "__main__":
 
     t_stop = np.linspace(0, tf, nb_dumps)
 
-    inputparams = {
-        "nb_dumps": nb_dumps,
-        "tf": tf,
-        "pmass": f"{pmass:.1e}",  # TODO not anymore...
-        "dr": dr,
-        "xmax": xmax,
-        "eos": eos["name"],
-        "target": rhoprofiletxt,
-        "SG": SG,
-        "eps_plummer": eps_plummer,
-    }
+    inputparams["nb_dumps"] = nb_dumps
+    inputparams["tf"] = tf
+    inputparams["pmass"] = f"{pmass:.1e}"  # TODO not anymore..
+    inputparams["mtot_target"] = mtot_target  # TODO not anymore..
+    inputparams["dr"] = dr
+    inputparams["xmax"] = xmax
+    inputparams["eos"] = eos["name"]
+    inputparams["target"] = rhoprofiletxt
+    inputparams["SG"] = SG
+    inputparams["eps_plummer"] = eps_plummer
+
     for param, value in eos["values"].items():
         inputparams[param] = value
 
@@ -322,11 +328,11 @@ if __name__ == "__main__":
             codeu,
             dr,
             xmax,
-            mtot=mtot,
+            mtot_target=mtot_target,
             rhotarget=rhotarget,
             eos=eos,
             SG=SG,
-            epsplummer=eps_plummer,
+            eps_plummer=eps_plummer,
         )
     Npartfinal = model.get_total_part_count()
     pmassfinal = model.get_particle_mass()
@@ -355,5 +361,3 @@ if __name__ == "__main__":
 
 
 # ./shamrock --sycl-cfg 0:0 --loglevel 1 --rscript ./test_fermi.py
-## ? Warning: the corrector tolerance are broken the step will be re rerunned                                                                                                                                    [BasicGasSPH][rank=0]
-# ? eps_v = 0.06158665025247084 ???
