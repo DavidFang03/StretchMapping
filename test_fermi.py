@@ -164,9 +164,7 @@ def plot(fig, img_path, model, ctx, rhotarget, inputparams, eos=None):
     inputparams["pmass"] = mpart
 
     if fig is None:
-        fig = px_utilities.px_3d_and_rho(
-            model, ctx, img_path, rhotarget, inputparams, eos
-        )
+        fig = px_utilities.px_3d_and_rho(model, ctx, img_path, rhotarget, inputparams)
     else:
         px_utilities.update_px_3d_and_rho(fig, model, ctx, img_path, inputparams)
     print("I will write this image in", img_path)
@@ -214,7 +212,8 @@ def test_init(model, ctx, rhotarget, inputparams, dump_prefix):
 
 
 def loop(fig, t_stop, model, ctx, rhotarget, inputparams, dump_prefix):
-    for t in t_stop:
+    for i, t in enumerate(t_stop):
+        print(f"looping, still {len(t_stop)-1} to go")
         model.change_htolerances(coarse=1.3, fine=min(1.3, 1.1))
         model.evolve_until(t)
         model.change_htolerances(coarse=1.1, fine=min(1.1, 1.1))
@@ -223,6 +222,21 @@ def loop(fig, t_stop, model, ctx, rhotarget, inputparams, dump_prefix):
         img_path = f"{newpath_withoutext}.png"
         dump(model, dump_path=dump_path)  # **before** plotting
         plot(fig, img_path, model, ctx, rhotarget, inputparams)
+
+
+def setup_Fermi(Ntarget, y0, mu_e):
+    tabx, tabrho = su.solve_Chandrasekhar(y0, mu_e)
+    tabx /= su.Rsol
+    tabrho /= su.density
+
+    arr1inds = tabx.argsort()
+    tabx = tabx[arr1inds]
+    tabrho = tabrho[arr1inds]
+    xmax = tabx[-1]
+    rhoprofiletxt = "solve_ivp(RK45)"
+    mtot_target = su.integrate_target(rhotarget)
+
+    return tabx, tabrho, mtot_target
 
 
 # ! Simulation parameters
@@ -236,14 +250,12 @@ if __name__ == "__main__":
     # durationrestart = 0
     SG = True
     nb_dumps = 400
-    tf_cl = 24 # durée de la run en temps de chute libre (environ)
+    tf_cl = 24  # durée de la run en temps de chute libre (environ)
 
     N_target = 200000
 
     eos = "fermi"
     # eos = "polytropic"
-
-
 
     ######################################
     inputparams = {}
@@ -252,31 +264,13 @@ if __name__ == "__main__":
         # Then, the input is y0
         y0 = 5
         mu_e = 2
-        tabx, tabrho = su.solve_Chandrasekhar(y0, mu_e)
-        tabx /= su.Rsol
-        tabrho /= su.density
 
-        arr1inds = tabx.argsort()
-        tabx = tabx[arr1inds]
-        tabrho = tabrho[arr1inds]
-        xmax = tabx[-1]
-        rhoprofiletxt = "solve_ivp(RK45)"
-        rhotarget = np.array([tabx, tabrho])
-        mtot_target = su.integrate_target(rhotarget)
-        print("max density", np.max(tabrho))
-        print("mean density", np.mean(tabrho))
-        print("radius", np.max(tabx))
-        print("mtot integrated", mtot_target)
-        hfact = 1.0  # ou la valeur voulue
-        mperpart = mtot_target / (N_target / 2)  # masse par particule
-        eps_plummer = hfact * (mperpart / np.max(tabrho)) ** (1.0 / 3.0)  # h min à peu près
-        # eps_plummer = h
-        eos = {"name": "fermi", "id": f"f{mu_e}", "values": {"mu_e": mu_e}}
-        inputparams["y0"] = y0
-        inputparams["mu_e"] = mu_e
+        eos = {"name": "fermi", "id": f"f{mu_e}", "values": {"mu_e": mu_e, "y0": y0}}
+        # inputparams["y0"] = y0
+        # inputparams["mu_e"] = mu_e
+        tabx, tabrho, mtot_target = setup_Fermi(y0, mu_e)
     elif eos == "polytropic":
         # Then, the input is mtot_target
-        eps_plummer = 1e-2
         mtot_target = 3
         K = 1
         n = 1
@@ -291,6 +285,17 @@ if __name__ == "__main__":
         tabx = np.linspace(0, xmax)
         tabrho = rhoprofile(tabx)
         rhotarget = np.array([tabx, tabrho])
+
+    rhotarget = np.array([tabx, tabrho])
+
+    print("max density", np.max(tabrho))
+    print("mean density", np.mean(tabrho))
+    print("radius", np.max(tabx))
+    print("mtot integrated", mtot_target)
+    hfact = 1.2  # ou la valeur voulue
+    m = mtot_target / (N_target / 2)  # masse par particule
+    h = hfact * (m / np.max(tabrho)) ** (1.0 / 3.0)  # h min à peu près
+    eps_plummer = h
 
     dump_prefix = f"{eos["id"]}_"
 
@@ -311,14 +316,16 @@ if __name__ == "__main__":
     # tf = 1
     # tf = 5e-2
     if restart:
-        t_stop = np.linspace(0+durationrestart*tf, tf + durationrestart*tf, nb_dumps + durationrestart * nb_dumps)
+        t_stop = np.linspace(
+            0 + durationrestart * tf,
+            tf + durationrestart * tf,
+            nb_dumps + durationrestart * nb_dumps,
+        )
         tf *= 2
         nb_dumps *= 2
     else:
         t_stop = np.linspace(0, tf, nb_dumps)
     print(f"xmax{xmax:.1e} tf{tf:.1e}")
-
-
 
     inputparams["nb_dumps"] = nb_dumps
     inputparams["tf"] = tf
@@ -326,7 +333,7 @@ if __name__ == "__main__":
     inputparams["mtot_target"] = mtot_target
     inputparams["dr"] = dr
     inputparams["xmax"] = xmax
-    inputparams["eos"] = eos["name"]
+    inputparams["eos"] = eos
     inputparams["target"] = rhoprofiletxt
     inputparams["SG"] = SG
     inputparams["eps_plummer"] = eps_plummer
@@ -392,7 +399,7 @@ if __name__ == "__main__":
         filemp4 = f"{folder_path}/{dump_prefix}.mp4"
         px_utilities.movie(pattern_png, filemp4, fps)
         print(f"movie: {filemp4}")
-        # dump(model, dump_path=f"{folder_name}/finaldump.sham") 
+        # dump(model, dump_path=f"{folder_name}/finaldump.sham")
 
 
 # ./shamrock --sycl-cfg 0:0 --loglevel 1 --rscript ./test_fermi.py

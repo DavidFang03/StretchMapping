@@ -39,8 +39,8 @@ def format_inputparams(input_params):
     return string
 
 
-def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, eos):
-
+def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params):
+    eos = input_params["eos"]
     data = ctx.collect_data()
     t = model.get_time()
     mpart = model.get_particle_mass()
@@ -404,7 +404,7 @@ def movie(pattern_png, filemp4, fps):
     ffmpeg.input(pattern_png, pattern_type="glob", framerate=fps).output(
         filemp4,
         vcodec="libx264",
-        crf=23,
+        crf=18,
         preset="medium",
         r=fps,
         pix_fmt="yuv420p",
