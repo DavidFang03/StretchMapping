@@ -232,7 +232,7 @@ if __name__ == "__main__":
     SG = True
     nb_dumps = 40
 
-    N_target = 20000
+    N_target = 200000
 
     eos = "fermi"
     # eos = "polytropic"
@@ -299,7 +299,7 @@ if __name__ == "__main__":
         dump_prefix += "SG_"
     dump_prefix += "cd10_"
 
-    tf = np.sqrt(xmax**3 / mtot_target)
+    tf = 2 * np.sqrt(xmax**3 / mtot_target)
     # tf = 1
     # tf = 5e-2
     nb_dumps = 10
