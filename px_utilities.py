@@ -404,7 +404,7 @@ def movie(pattern_png, filemp4, fps):
     ffmpeg.input(pattern_png, pattern_type="glob", framerate=fps).output(
         filemp4,
         vcodec="libx264",
-        crf=18,
+        crf=23,
         preset="medium",
         r=fps,
         pix_fmt="yuv420p",

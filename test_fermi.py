@@ -144,8 +144,10 @@ def setupModel(model, codeu, dr, xmax, mtot_target, rhotarget, eos, SG, eps_plum
     )
     setup.apply_setup(stretched_hcp)
 
-    C_cour = 0.3
-    C_force = 0.25
+    C_cour = 0.1
+    C_force = 0.1
+    # C_cour = 0.3
+    # C_force = 0.25
     model.set_cfl_cour(C_cour)
     model.set_cfl_force(C_force)
     return model, ctx
@@ -229,13 +231,19 @@ if __name__ == "__main__":
 
     #####################################
     restart = False
+    # folder_restart = "./outputs/f2_200k_SG_cd10_007"
+    # durationrestart = 1 #  + 1 fois la simu initiale
+    # durationrestart = 0
     SG = True
-    nb_dumps = 40
+    nb_dumps = 400
+    tf_cl = 24 # durée de la run en temps de chute libre (environ)
 
     N_target = 200000
 
     eos = "fermi"
     # eos = "polytropic"
+
+
 
     ######################################
     inputparams = {}
@@ -260,9 +268,9 @@ if __name__ == "__main__":
         print("radius", np.max(tabx))
         print("mtot integrated", mtot_target)
         hfact = 1.0  # ou la valeur voulue
-        m = mtot_target / (N_target / 2)  # masse par particule
-        h = hfact * (m / np.max(tabrho)) ** (1.0 / 3.0)  # h min à peu près
-        eps_plummer = h
+        mperpart = mtot_target / (N_target / 2)  # masse par particule
+        eps_plummer = hfact * (mperpart / np.max(tabrho)) ** (1.0 / 3.0)  # h min à peu près
+        # eps_plummer = h
         eos = {"name": "fermi", "id": f"f{mu_e}", "values": {"mu_e": mu_e}}
         inputparams["y0"] = y0
         inputparams["mu_e"] = mu_e
@@ -298,13 +306,19 @@ if __name__ == "__main__":
         dump_prefix += "SG_"
     dump_prefix += "cd10_"
 
-    tf = 2 * np.sqrt(xmax**3 / mtot_target)
+    tcl = np.sqrt(xmax**3 / mtot_target)
+    tf = tf_cl * tcl
     # tf = 1
     # tf = 5e-2
-    nb_dumps = 10
+    if restart:
+        t_stop = np.linspace(0+durationrestart*tf, tf + durationrestart*tf, nb_dumps + durationrestart * nb_dumps)
+        tf *= 2
+        nb_dumps *= 2
+    else:
+        t_stop = np.linspace(0, tf, nb_dumps)
     print(f"xmax{xmax:.1e} tf{tf:.1e}")
 
-    t_stop = np.linspace(0, tf, nb_dumps)
+
 
     inputparams["nb_dumps"] = nb_dumps
     inputparams["tf"] = tf
@@ -321,7 +335,10 @@ if __name__ == "__main__":
         inputparams[param] = value
 
     ## ! Set the scene<
-    folder_path = handle_dump(dump_prefix)
+    if restart:
+        folder_path = folder_restart
+    else:
+        folder_path = handle_dump(dump_prefix)
     write_json_params(inputparams, json_path=f"{folder_path}/inputparams.json")
 
     ## ! Stretchmapping
@@ -352,19 +369,30 @@ if __name__ == "__main__":
     #     f"Ended up with {Npartfinal} particles so Mtot={Npartfinal*model.get_particle_mass()}, testing init"
     # )
 
-    ## ! Making sure everything nicely settled
-    fig = test_init(model, ctx, rhotarget, inputparams, dump_prefix)
-    print("Init test completed, running")
-    ## ! Running
-    loop(fig, t_stop, model, ctx, rhotarget, inputparams, dump_prefix)
-    print("Running completed, showing final plot")
-    ## ! Video
-    fps = px_utilities.compute_fps(inputparams)
-    # fps = 2
-    pattern_png = f"{folder_path}/*.png"
-    filemp4 = f"{folder_path}/{dump_prefix}.mp4"
-    px_utilities.movie(pattern_png, filemp4, fps)
-    print(f"movie: {filemp4}")
+    if restart:
+        loop(fig, t_stop, model, ctx, rhotarget, inputparams, dump_prefix)
+        print("Running completed, showing final plot")
+        ## ! Video
+        fps = px_utilities.compute_fps(inputparams)
+        pattern_png = f"{folder_path}/*.png"
+        filemp4 = f"{folder_path}/{dump_prefix}.mp4"
+        px_utilities.movie(pattern_png, filemp4, fps)
+        print(f"movie: {filemp4}")
+    else:
+        ## ! Making sure everything nicely settled
+        fig = test_init(model, ctx, rhotarget, inputparams, dump_prefix)
+        print("Init test completed, running")
+        ## ! Running
+        loop(fig, t_stop, model, ctx, rhotarget, inputparams, dump_prefix)
+        print("Running completed, showing final plot")
+        ## ! Video
+        fps = px_utilities.compute_fps(inputparams)
+        # fps = 2
+        pattern_png = f"{folder_path}/*.png"
+        filemp4 = f"{folder_path}/{dump_prefix}.mp4"
+        px_utilities.movie(pattern_png, filemp4, fps)
+        print(f"movie: {filemp4}")
+        # dump(model, dump_path=f"{folder_name}/finaldump.sham") 
 
 
 # ./shamrock --sycl-cfg 0:0 --loglevel 1 --rscript ./test_fermi.py
