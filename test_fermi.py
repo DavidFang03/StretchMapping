@@ -259,11 +259,10 @@ if __name__ == "__main__":
         print("mean density", np.mean(tabrho))
         print("radius", np.max(tabx))
         print("mtot integrated", mtot_target)
-        eps_plummer = np.pow(
-            (mtot_target / (N_target / 2)) / np.max(tabrho), 1.0 / 3.0
-        ) ** 3 / (
-            N_target / 2
-        )  # h min à peu près
+        hfact = 1.0  # ou la valeur voulue
+        m = mtot_target / (N_target / 2)  # masse par particule
+        h = hfact * (m / np.max(tabrho)) ** (1.0 / 3.0)  # h min à peu près
+        eps_plummer = h
         eos = {"name": "fermi", "id": f"f{mu_e}", "values": {"mu_e": mu_e}}
         inputparams["y0"] = y0
         inputparams["mu_e"] = mu_e
