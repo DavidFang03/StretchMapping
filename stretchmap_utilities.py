@@ -156,7 +156,7 @@ def solve_Chandrasekhar(y_0, mu_e):
 
     eta_s = sol.t_events[0][0]
     num_points = 100
-    eta_discret = np.linspace(sol.t[0], eta_s, num_points)
+    eta_discret = np.linspace(sol.t[0], eta_s, num_points)[:-1]
     discrete_Phi = sol.sol(eta_discret)[0, :]
 
     # C1 = (8 * np.pi * m_e**3 * c**3 * m_p * mu) / (3 * h**3)
