@@ -40,12 +40,14 @@ def format_inputparams(input_params):
     string = ""
     for key, value in input_params.items():
         if isinstance(value, dict):
-            valuestr = ""
-            for k, v in value.items():
-                valuestr += f"{key}[{k}]={format_param(k,v)}"
+            line = ""
+            line += f"{key}[name]={format_param("name",value["name"])} <br>"
+            for param, param_value in value["values"].items():
+                line += f"{key}[{param}]={format_param(param,param_value)} <br>"
         else:
             valuestr = format_param(key, value)
-        string += f"{key}: {valuestr} <br>"
+            line = f"{key}: {valuestr} <br>"
+        string += line
     return string
 
 

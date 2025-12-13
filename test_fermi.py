@@ -17,15 +17,15 @@ def handle_dump(dump_prefix, overwrite=False):
     except OSError as error:
         print("ok outputs exist")
 
-    if overwrite:
+    last_eventual_folder_name = sham_utilities.get_last_folder(dump_prefix)
+    if overwrite and os.path.isdir(last_eventual_folder_name):
         folder_name = sham_utilities.get_last_folder(dump_prefix)
         user_agree = input(
             f"Will remove the entire {folder_name} folder ({len(glob.glob(f"{folder_name}/*.sham"))} dumps) (y/n)"
         )
         if user_agree == "y":
-            import os
 
-            for f in glob.glob(f"{folder_name}/*.sham"):
+            for f in glob.glob(f"{folder_name}/*"):
                 os.remove(f)
     else:
         folder_name = sham_utilities.get_new_folder(dump_prefix)
@@ -238,7 +238,7 @@ def loop(fig, t_stop, model, ctx, rhotarget, inputparams, dump_prefix):
         plot(fig, img_path, model, ctx, rhotarget, inputparams)
 
 
-def setup_Fermi(Ntarget, y0, mu_e):
+def setup_Fermi(y0, mu_e):
     tabx, tabrho = su.solve_Chandrasekhar(y0, mu_e)
     tabx /= su.Rsol
     tabrho /= su.density
@@ -246,9 +246,7 @@ def setup_Fermi(Ntarget, y0, mu_e):
     arr1inds = tabx.argsort()
     tabx = tabx[arr1inds]
     tabrho = tabrho[arr1inds]
-    xmax = tabx[-1]
-    rhoprofiletxt = "solve_ivp(RK45)"
-    mtot_target = su.integrate_target(rhotarget)
+    mtot_target = su.integrate_target([tabx, tabrho])
 
     return tabx, tabrho, mtot_target
 
@@ -257,8 +255,9 @@ def setup_Fermi(Ntarget, y0, mu_e):
 if __name__ == "__main__":
     model, ctx, codeu = initModel()
 
-    #####################################
+    #!####################################
     restart = False
+    overwrite = True
     # folder_restart = "./outputs/f2_200k_SG_cd10_007"
     # durationrestart = 1 #  + 1 fois la simu initiale
     # durationrestart = 0
@@ -266,12 +265,12 @@ if __name__ == "__main__":
     nb_dumps = 400
     tf_cl = 24  # durée de la run en temps de chute libre (environ)
 
-    N_target = 200000
+    N_target = 2e6
 
     eos = "fermi"
     # eos = "polytropic"
 
-    ######################################
+    #! #####################################
     inputparams = {}
 
     if eos == "fermi":
@@ -283,6 +282,8 @@ if __name__ == "__main__":
         # inputparams["y0"] = y0
         # inputparams["mu_e"] = mu_e
         tabx, tabrho, mtot_target = setup_Fermi(y0, mu_e)
+
+        rhoprofiletxt = "solve_ivp(RK45)"
     elif eos == "polytropic":
         # Then, the input is mtot_target
         mtot_target = 3
@@ -300,6 +301,7 @@ if __name__ == "__main__":
         tabrho = rhoprofile(tabx)
         rhotarget = np.array([tabx, tabrho])
 
+    xmax = np.max(tabx)
     rhotarget = np.array([tabx, tabrho])
 
     print("max density", np.max(tabrho))
@@ -359,7 +361,7 @@ if __name__ == "__main__":
     if restart:
         folder_path = folder_restart
     else:
-        folder_path = handle_dump(dump_prefix)
+        folder_path = handle_dump(dump_prefix, overwrite)
     write_json_params(inputparams, json_path=f"{folder_path}/inputparams.json")
 
     ## ! Stretchmapping
