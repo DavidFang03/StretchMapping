@@ -21,20 +21,30 @@ def get_rho_values(data, mpart):
     return Rho
 
 
+def format_param(key, value):
+    if key in ["y0", "n"]:
+        valuestr = value
+    elif key in ["mtot_target"]:
+        valuestr = f"{value:.3f}"
+    elif isinstance(value, float):
+        if value > 10 or value < 0.1:
+            valuestr = f"{value:.1e}"
+        else:
+            valuestr = f"{value:.1f}"
+    else:
+        valuestr = value
+    return valuestr
+
+
 def format_inputparams(input_params):
     string = ""
     for key, value in input_params.items():
-        if key in ["y0", "n"]:
-            valuestr = value
-        elif key in ["mtot_target"]:
-            valuestr = f"{value:.3f}"
-        elif isinstance(value, float):
-            if value > 10 or value < 0.1:
-                valuestr = f"{value:.1e}"
-            else:
-                valuestr = f"{value:.1f}"
+        if isinstance(value, dict):
+            valuestr = ""
+            for k, v in value.items():
+                valuestr += f"{key}[{k}]={format_param(k,v)}"
         else:
-            valuestr = value
+            valuestr = format_param(key, value)
         string += f"{key}: {valuestr} <br>"
     return string
 

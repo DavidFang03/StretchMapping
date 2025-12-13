@@ -7,7 +7,9 @@
 \usepackage{amsmath}
 \usepackage{derivative}
 \usepackage{tikz}
+\usepackage{hyperref}
 \usepackage{tcolorbox}
+\usepackage{empheq}
 
 \newcommand{\me}{m_\mathrm{e}}
 \newcommand{\mpr}{m_\mathrm{p}}
@@ -18,6 +20,7 @@
 \newcommand{\dr}{\odif{r}}
 \newcommand{\Rsun}{R_{\odot}}
 \newcommand{\Msun}{M_{\odot}}
+\newcommand{\Tsun}{T_{\odot}}
 
 \DeclareMathOperator{\arcsinh}{arcsinh}
 \DeclareMathOperator{\sinc}{sinc}
@@ -230,5 +233,35 @@ avec
 \[
   r_a = \frac{1}{C_1}\sqrt{\frac{2\beta}{\pi G}}
 \]
+
+\section{Pas de temps pour une naine blanche}
+On regarde le rapport $\frac{\tau}{\odif{t}_{\min}}$ où $\tau$ est le temps caractéristique de l'évolution de l'étoile et $\odif{t}_{\min}$ le pas de temps imposée par la CFL.
+Normalement le $\odif{t}_{\min}$ est au centre
+\[
+  \odif{t}_{\min} = \frac{h_{\min}}{c_{s,\max}}
+\]
+puisque $c_s$ est maximal au centre et $h$ minimal.
+Le $\tau$ correspond à la traversée d'une onde sonore à travers $R$.
+\[
+  \tau = \frac{R}{\overline c_s}
+\]
+Au final,
+\[ \frac{\tau}{\odif{t}_{\min}} = \frac{R}{h_{\min}} \frac{c_{s,\max}}{\overline c_s} \approx   \frac{R}{h_{\min}}  \]
+car $c_s$ varie à peine d'un facteur $10$ entre $r=[0,R]$.
+Ce qui doit correspondre à
+\[ \frac{\tau}{\odif{t}_{\min}} \approx N^{\frac13} \]
+En effet
+\[ h \approx n^{-\frac13} \approx \left(\frac{R^3}{N}\right)^\frac13 \]
+Application numérique. Unités du code $(\Msun, \Rsun, \Tsun = \sqrt{\frac{\Rsun^3}{\Msun G}})$ (donc $G=1$). On prend une WD d'à peu près $M=\Msun, R=10^{-2}\Rsun$
+Ça donne des $c_s \approx 10$.
+En effet, grossièrement à l'équilibre
+\[ \frac{P}{R} = \rho \frac{\Msun G}{R^2} \]
+D'où
+\[c_s \approx \sqrt{\frac{P}{\rho}} \approx \sqrt{\frac{\Msun G}{R}} = \sqrt{\frac{\Rsun}{R}} \frac{\Rsun}{\Tsun} = \sqrt{\frac{\Rsun}{R}} \approx 10 \]
+Au final, on s'attend à un $\odif{t}_{\min}$ de
+\begin{empheq}[box=\fbox]{align*}
+  \odif{t}_{\min} &= \frac{h_{\min}}{c_{s,\max}} \approx \frac{h_{\min}}{10} \\
+  \odif{t}_{\min} &= \frac{\tau}{N^{\frac13}} = \frac{R}{\overline c_s N^{\frac13}} \approx \frac{10^{-2}}{10 N^\frac13} \stackrel{N=10^5}{=} [10^{-4},10^{-5}]
+\end{empheq}
 
 \end{document}

@@ -11,16 +11,30 @@ import ffmpeg
 shamrock.enable_experimental_features()
 
 
-def handle_dump(dump_prefix):
+def handle_dump(dump_prefix, overwrite=False):
     try:
         os.mkdir("outputs")
     except OSError as error:
         print("ok outputs exist")
-    folder_name = sham_utilities.get_new_folder(dump_prefix)
-    try:
-        os.mkdir(folder_name)
-    except OSError as error:
-        print(f"{folder_name} Directory already exists, no need to mkdir a new one.")
+
+    if overwrite:
+        folder_name = sham_utilities.get_last_folder(dump_prefix)
+        user_agree = input(
+            f"Will remove the entire {folder_name} folder ({len(glob.glob(f"{folder_name}/*.sham"))} dumps) (y/n)"
+        )
+        if user_agree == "y":
+            import os
+
+            for f in glob.glob(f"{folder_name}/*.sham"):
+                os.remove(f)
+    else:
+        folder_name = sham_utilities.get_new_folder(dump_prefix)
+        try:
+            os.mkdir(folder_name)
+        except OSError as error:
+            print(
+                f"{folder_name} Directory already exists, no need to mkdir a new one."
+            )
 
     command = f"cp {os.path.abspath(__file__)} {folder_name}/{dump_prefix}.py"
     print("executing", command)
