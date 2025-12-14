@@ -3,6 +3,7 @@ antipressur/
 antipressure/
 __pycache__/
 outputs/
+vtk/
 
 shamrock
 Davidq5em1_100k_shared.py

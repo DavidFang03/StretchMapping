@@ -67,19 +67,6 @@ pressure = Msol / Rsol / Tsol**2
 velocity = Rsol / Tsol
 
 
-Msol = 1.989e30
-Rsol = 6.957e8
-
-
-# def get_rho(phi, y0, rho0):
-#     return (
-#         rho0
-#         * np.pow(y0, 3)
-#         / np.pow(y0**2 - 1, 3.0 / 2.0)
-#         * np.pow(phi**2 - 1 / y0**2, 3.0 / 2.0)
-#     )
-
-
 def chandrasekhar_ode(eta, y, y0):
     """
     y = [u, v] = [Phi, Phi']
@@ -156,8 +143,8 @@ def solve_Chandrasekhar(y_0, mu_e):
 
     eta_s = sol.t_events[0][0]
     num_points = 100
-    eta_discret = np.linspace(sol.t[0], eta_s, num_points)[:-1]
-    discrete_Phi = sol.sol(eta_discret)[0, :]
+    eta_discrete = np.linspace(sol.t[0], eta_s, num_points)[:-1]
+    Phi_discrete = sol.sol(eta_discrete)[0, :]
 
     # C1 = (8 * np.pi * m_e**3 * c**3 * m_p * mu) / (3 * h**3)
 
@@ -165,8 +152,8 @@ def solve_Chandrasekhar(y_0, mu_e):
     # r_a = np.sqrt(2 * C2 / (np.pi * G)) / (C1 * y_0)
     # rho_0 = C1 * np.pow(y_0 - 1, 1.5)
 
-    R = RA * eta_discret / (y_0 * mu_e)
-    RHO = C1 * mu_e * ((y_0 * discrete_Phi) ** 2 - 1) ** (1.5)
+    R = RA * eta_discrete / (y_0 * mu_e)
+    RHO = C1 * mu_e * ((y_0 * Phi_discrete) ** 2 - 1) ** (1.5)
 
     print(R.shape, RHO.shape)
 
@@ -240,6 +227,44 @@ def get_p_and_cs_func(eos):
 
 
 if __name__ == "__main__":
+    # ###########################################
+    y0 = 5
+    mu_e = 2
+    # ###########################################
+
+    import matplotlib.pyplot as plt
+
+    R, RHO = solve_Chandrasekhar(y0, mu_e)  # SI
+
+    pfermi_rho = P_fermi(RHO[:-1], mu_e) / pressure
+    cs_rho = cs_fermi(RHO[:-1], mu_e) / velocity
+    R = R[:-1] / Rsol
+    RHO = RHO[:-1] / density
+
+    fig, axs = plt.subplots(3)
+    axs[0].plot(R, RHO)
+    axs[1].plot(R, pfermi_rho)
+    axs[2].plot(R, cs_rho)
+
+    axs[0].set_title("Density")
+    axs[1].set_title("Pressure")
+    axs[2].set_title("Soundspeed")
+    axs[0].set_ylabel(r"$\rho$")
+    axs[1].set_ylabel(r"$P$")
+    axs[2].set_ylabel(r"$c_s$")
+
+    for ax in axs:
+        ax.set_xlabel(r"$r/R_{\odot}$")
+    fig.subplots_adjust(hspace=0.6, left=0.3, right=0.7)
+    plt.show()
+
+    import pandas as pd
+
+    df = pd.DataFrame(
+        {"r": R, "rho_target": RHO, "P_target": pfermi_rho, "cs_target": cs_rho}
+    )
+    df.to_csv(f"rhotarget_y0-{y0}_mue-{mu_e}.csv", index=False)
+
     print(Msol, Rsol, Tsol)
     print(pressure, density, velocity)
     c = 2.99792458
@@ -272,18 +297,3 @@ if __name__ == "__main__":
     RA = (1 / C1) * np.sqrt(2 * BETA / (np.pi * G))
     _2RA_exp = -2 * C1_exp + (BETA_exp - G_exp)
     print(f"RA = {RA} *e{_2RA_exp}/2 ")  # a diviser par (y_0*mu_e)
-    # import matplotlib.pyplot as plt
-
-    # ###########################################
-    # y0_value = 1.5  # Exemple : paramètre de relativité
-    # ###########################################
-
-    # R, RHO = solve_Chandrasekhar(y0_value)
-
-    # fig, ax = plt.subplots()
-    # ax.plot(R, RHO)
-
-    # plt.show()
-
-# sol.t_events[0] donne l'emplacement du rayon de surface eta_s
-# sol.y[0] est la solution pour Phi, sol.y[1] est la solution pour Phi'
