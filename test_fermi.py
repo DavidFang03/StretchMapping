@@ -43,14 +43,11 @@ def handle_dump(dump_prefix, overwrite=False):
     return folder_name
 
 
-def reloadModel(dump_prefix):
-    ctx = shamrock.Context()
-    ctx.pdata_layout_new()
-    model = shamrock.get_Model_SPH(context=ctx, vector_type="f64_3", sph_kernel="M4")
+def reloadModel(dump_prefix, model):
     dump_path = sham_utilities.get_last_dump_path(dump_prefix)
     print("loading from", dump_path)
     model.load_from_dump(dump_path)
-    return model, ctx
+    return model
 
 
 def adim_r(r, codeu):
@@ -115,8 +112,13 @@ def setupModel(model, codeu, dr, xmax, mtot_target, rhotarget, eos, SG, eps_plum
     )
     cfg.set_particle_tracking(True)  # ! important ?
 
-    if SG:
+    if SG == "mm":
         cfg.set_self_gravity_mm(
+            order=5, opening_angle=0.5, reduction_level=3
+        )  #! self-gravity
+        cfg.set_softening_plummer(epsilon=eps_plummer)
+    elif SG == "fmm":
+        cfg.set_self_gravity_fmm(
             order=5, opening_angle=0.5, reduction_level=3
         )  #! self-gravity
         cfg.set_softening_plummer(epsilon=eps_plummer)
@@ -207,19 +209,27 @@ def test_init(model, ctx, rhotarget, inputparams, dump_prefix):
     :param img_path: Description
     :param dump_path: Description
     """
-
+    fig = None
     newpath_withoutext = sham_utilities.gen_new_path_withoutext(dump_prefix)
     dump_path = f"{newpath_withoutext}.sham"
     img_path = f"{newpath_withoutext}.png"
     dump(model, dump_path=dump_path)  # **before** plotting
-    fig = plot(None, img_path, model, ctx, rhotarget, inputparams, eos)
+    # fig = plot(None, img_path, model, ctx, rhotarget, inputparams, eos)
     model.change_htolerances(coarse=1.3, fine=min(1.3, 1.1))
     model.evolve_once_override_time(0.0, 0.0)
     model.change_htolerances(coarse=1.1, fine=min(1.1, 1.1))
+    # Here we need to rescale the density : mpart -> mpart*rho_{SPH}/rho_{target} = mpart*
+    hpart = ctx.collect_data()["hpart"]
+    mpart = model.get_particle_mass()
+    rhoSPH = mpart * (model.get_hfact() / hpart) ** 3
+    rescale = np.max(rhoSPH) / np.max(rhotarget)
+    inputparams["rescale"] = rescale
+    model.set_particle_mass(mpart * rescale)
+
     newpath_withoutext = sham_utilities.gen_new_path_withoutext(dump_prefix)
     img_path = f"{newpath_withoutext}.png"
     dump_path = f"{newpath_withoutext}.sham"
-    plot(fig, img_path, model, ctx, rhotarget, inputparams)
+    # plot(fig, img_path, model, ctx, rhotarget, inputparams)
     dump(model, dump_path=dump_path)
     # fig.show()
     return fig
@@ -235,7 +245,7 @@ def loop(fig, t_stop, model, ctx, rhotarget, inputparams, dump_prefix):
         dump_path = f"{newpath_withoutext}.sham"
         img_path = f"{newpath_withoutext}.png"
         dump(model, dump_path=dump_path)  # **before** plotting
-        plot(fig, img_path, model, ctx, rhotarget, inputparams)
+        # plot(fig, img_path, model, ctx, rhotarget, inputparams)
 
 
 def setup_Fermi(y0, mu_e):
@@ -257,15 +267,16 @@ if __name__ == "__main__":
 
     #!####################################
     restart = False
+    durationrestart = 0
+    folder_restart = "./outputs/f2_2000k_SG_cd10_000/"
     overwrite = True
-    # folder_restart = "./outputs/f2_200k_SG_cd10_007"
     # durationrestart = 1 #  + 1 fois la simu initiale
     # durationrestart = 0
-    SG = True
-    nb_dumps = 400
+    SG = "fmm"
+    nb_dumps = 200
     tf_cl = 24  # durée de la run en temps de chute libre (environ)
 
-    N_target = 2e6
+    N_target = 2e5
 
     eos = "fermi"
     # eos = "polytropic"
@@ -274,18 +285,13 @@ if __name__ == "__main__":
     inputparams = {}
 
     if eos == "fermi":
-        # Then, the input is y0
         y0 = 5
         mu_e = 2
-
         eos = {"name": "fermi", "id": f"f{mu_e}", "values": {"mu_e": mu_e, "y0": y0}}
-        # inputparams["y0"] = y0
-        # inputparams["mu_e"] = mu_e
-        tabx, tabrho, mtot_target = setup_Fermi(y0, mu_e)
-
+        tabx, tabrho, mtot_target = setup_Fermi(y0, mu_e)  # already normalized
+        # mtot_target *= 1.01
         rhoprofiletxt = "solve_ivp(RK45)"
     elif eos == "polytropic":
-        # Then, the input is mtot_target
         mtot_target = 3
         K = 1
         n = 1
@@ -299,7 +305,10 @@ if __name__ == "__main__":
         rhoprofiletxt = "sinc"
         tabx = np.linspace(0, xmax)
         tabrho = rhoprofile(tabx)
-        rhotarget = np.array([tabx, tabrho])
+        # Normalizing
+        integral_profile = su.integrate_target([tabx, tabrho])
+        rho0 = mtot_target / integral_profile
+        rhotarget = np.array([tabx, rho0 * tabrho])
 
     xmax = np.max(tabx)
     rhotarget = np.array([tabx, tabrho])
@@ -323,9 +332,9 @@ if __name__ == "__main__":
     print(f"Guessing {N_target} particles")
     dump_prefix += f"{int(N_target/1000)}k_"
 
-    if SG:
-        dump_prefix += "SG_"
-    dump_prefix += "cd10_"
+    if SG != False:
+        dump_prefix += f"{SG}_"
+    dump_prefix += "cd10_rescaled_"
 
     tcl = np.sqrt(xmax**3 / mtot_target)
     tf = tf_cl * tcl
@@ -357,7 +366,7 @@ if __name__ == "__main__":
     for param, value in eos["values"].items():
         inputparams[param] = value
 
-    ## ! Set the scene<
+    ## ! Set the scene
     if restart:
         folder_path = folder_restart
     else:
@@ -367,7 +376,7 @@ if __name__ == "__main__":
     ## ! Stretchmapping
 
     if restart:
-        model, ctx = reloadModel(dump_prefix)
+        model = reloadModel(dump_prefix, model)
     else:
         model, ctx = setupModel(
             model,
@@ -393,14 +402,15 @@ if __name__ == "__main__":
     # )
 
     if restart:
+        fig = None
         loop(fig, t_stop, model, ctx, rhotarget, inputparams, dump_prefix)
         print("Running completed, showing final plot")
         ## ! Video
-        fps = px_utilities.compute_fps(inputparams)
-        pattern_png = f"{folder_path}/*.png"
-        filemp4 = f"{folder_path}/{dump_prefix}.mp4"
-        px_utilities.movie(pattern_png, filemp4, fps)
-        print(f"movie: {filemp4}")
+        # fps = px_utilities.compute_fps(inputparams)
+        # pattern_png = f"{folder_path}/*.png"
+        # filemp4 = f"{folder_path}/{dump_prefix}.mp4"
+        # px_utilities.movie(pattern_png, filemp4, fps)
+        # print(f"movie: {filemp4}")
     else:
         ## ! Making sure everything nicely settled
         fig = test_init(model, ctx, rhotarget, inputparams, dump_prefix)
@@ -409,12 +419,12 @@ if __name__ == "__main__":
         loop(fig, t_stop, model, ctx, rhotarget, inputparams, dump_prefix)
         print("Running completed, showing final plot")
         ## ! Video
-        fps = px_utilities.compute_fps(inputparams)
-        # fps = 2
-        pattern_png = f"{folder_path}/*.png"
-        filemp4 = f"{folder_path}/{dump_prefix}.mp4"
-        px_utilities.movie(pattern_png, filemp4, fps)
-        print(f"movie: {filemp4}")
+        # fps = px_utilities.compute_fps(inputparams)
+        # # fps = 2
+        # pattern_png = f"{folder_path}/*.png"
+        # filemp4 = f"{folder_path}/{dump_prefix}.mp4"
+        # px_utilities.movie(pattern_png, filemp4, fps)
+        # print(f"movie: {filemp4}")
         # dump(model, dump_path=f"{folder_name}/finaldump.sham")
 
 

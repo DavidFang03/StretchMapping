@@ -52,6 +52,15 @@ def format_inputparams(input_params):
 
 
 def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params):
+    """
+    I don't normalize here, please be sure that rhotarget is normalized
+
+    :param model: Description
+    :param ctx: Description
+    :param img_path: Description
+    :param rhotarget: Description
+    :param input_params: Description
+    """
     eos = input_params["eos"]
     data = ctx.collect_data()
     t = model.get_time()
@@ -59,11 +68,7 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params):
     Pos = data["xyz"]
 
     R = np.linalg.norm(Pos, axis=1)
-
-    mtot_target = input_params["mtot_target"]
     Np = Pos.shape[0]
-    integral_profile = su.integrate_target(rhotarget)
-    rho0 = mtot_target / integral_profile
 
     Rho = get_rho_values(data, mpart)
 
@@ -138,8 +143,8 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params):
                 ),
                 cmin=0,
                 cmax=np.max(Rho),
-                opacity=0.6,
-                size=3,
+                opacity=0.3,
+                size=1,
             ),
             showlegend=False,
         ),
