@@ -218,11 +218,11 @@ def test_init(model, ctx, rhotarget, inputparams, dump_prefix):
     model.change_htolerances(coarse=1.3, fine=min(1.3, 1.1))
     model.evolve_once_override_time(0.0, 0.0)
     model.change_htolerances(coarse=1.1, fine=min(1.1, 1.1))
-    # Here we need to rescale the density : mpart -> mpart*rho_{SPH}/rho_{target} = mpart*
+    # Here we need to rescale the density : mpart -> mpart*rho_{target}/rho_{SPH} = mpart*
     hpart = ctx.collect_data()["hpart"]
     mpart = model.get_particle_mass()
     rhoSPH = mpart * (model.get_hfact() / hpart) ** 3
-    rescale = np.max(rhoSPH) / np.max(rhotarget)
+    rescale = np.max(rhotarget) / np.max(rhoSPH)
     inputparams["rescale"] = rescale
     model.set_particle_mass(mpart * rescale)
 
@@ -232,7 +232,7 @@ def test_init(model, ctx, rhotarget, inputparams, dump_prefix):
     # plot(fig, img_path, model, ctx, rhotarget, inputparams)
     dump(model, dump_path=dump_path)
     # fig.show()
-    return fig
+    return inputparams
 
 
 def loop(fig, t_stop, model, ctx, rhotarget, inputparams, dump_prefix):
@@ -371,7 +371,6 @@ if __name__ == "__main__":
         folder_path = folder_restart
     else:
         folder_path = handle_dump(dump_prefix, overwrite)
-    write_json_params(inputparams, json_path=f"{folder_path}/inputparams.json")
 
     ## ! Stretchmapping
 
@@ -402,8 +401,8 @@ if __name__ == "__main__":
     # )
 
     if restart:
-        fig = None
-        loop(fig, t_stop, model, ctx, rhotarget, inputparams, dump_prefix)
+        # fig = None
+        loop(None, t_stop, model, ctx, rhotarget, inputparams, dump_prefix)
         print("Running completed, showing final plot")
         ## ! Video
         # fps = px_utilities.compute_fps(inputparams)
@@ -413,10 +412,11 @@ if __name__ == "__main__":
         # print(f"movie: {filemp4}")
     else:
         ## ! Making sure everything nicely settled
-        fig = test_init(model, ctx, rhotarget, inputparams, dump_prefix)
+        inputparams = test_init(model, ctx, rhotarget, inputparams, dump_prefix)
+        write_json_params(inputparams, json_path=f"{folder_path}/inputparams.json")
         print("Init test completed, running")
         ## ! Running
-        loop(fig, t_stop, model, ctx, rhotarget, inputparams, dump_prefix)
+        loop(None, t_stop, model, ctx, rhotarget, inputparams, dump_prefix)
         print("Running completed, showing final plot")
         ## ! Video
         # fps = px_utilities.compute_fps(inputparams)
