@@ -21,6 +21,16 @@
 \newcommand{\Rsun}{R_{\odot}}
 \newcommand{\Msun}{M_{\odot}}
 \newcommand{\Tsun}{T_{\odot}}
+\newcommand{\uiv}{u_{\textrm{IV}}}
+\newcommand{\ucv}{u_{\textrm{CV}}}
+\newcommand{\rhoIV}{\rho_{\textrm{IV}}}
+\newcommand{\cs}{c_{\textrm{s}}}
+% \newcommand{a}{a_{\textrm{T}}}
+% \newcommand{A}{A_{\textrm{T}}}
+% \newcommand{B}{B_{\textrm{T}}}
+% \newcommand{b}{b_{\textrm{T}}}
+% \newcommand{\alpha}{\alpha_{\textrm{T}}}
+% \newcommand{\beta}{\beta_{\textrm{T}}}
 
 \DeclareMathOperator{\arcsinh}{arcsinh}
 \DeclareMathOperator{\sinc}{sinc}
@@ -263,5 +273,217 @@ Au final, on s'attend à un $\odif{t}_{\min}$ de
   \odif{t}_{\min} &= \frac{h_{\min}}{c_{s,\max}} \approx \frac{h_{\min}}{10} \\
   \odif{t}_{\min} &= \frac{\tau}{N^{\frac13}} = \frac{R}{\overline c_s N^{\frac13}} \approx \frac{10^{-2}}{10 N^\frac13} \stackrel{N=10^5}{=} [10^{-4},10^{-5}]
 \end{empheq}
+
+\section{Tillotson equation}
+
+In the Tillotson EOS thermodynamic phase space is divided into a compressed region $(\rho > \rho_0$)
+and an expanded region $(\rho < \rho_0)$, where $\rho, \rho_0$ are the density and zero-pressure density, respectively. The expanded
+region is further divided into \textbf{three} subregions, based on the material's internal energy $e$: (1) expanded cold state
+$(u < \uiv)$, (2) expanded hot state $(u > \ucv)$, which converges to ideal gas at low densities, and (3) an intermediate
+state $(\uiv < e < \ucv)$, known as the mixed phase state. Here, $\uiv$, and $\ucv$ are the energies at incipient vaporization and
+complete vaporization, respectively. In Tillotson (1962) the mixed phase state was governed by the same equation as the
+expanded cold state. To avoid pressure discontinuities, in modern approaches the mixed phase state is often assigned
+an alternative equation, which is simply a linear interpolation of the equations of the expanded subregions (Holian and
+Holian, 1989). The interpolation is purely mathematical, and does not represent a physical phase transition. Tillotson
+is convenient to implement in hydrocodes, is computationally fast, but suffers from the lack of phase transitions, and
+the exclusion of entropy and temperature
+
+We write
+\begin{align*}
+  \eta &= \frac{\rho}{\rho_0} & \text{(compression)}\\
+  \chi &= \eta -1 &\text{(strain)}
+\end{align*}
+\begin{enumerate}
+  \item Compressed region $\rho\geq\rho_0$
+    \[p = \left[a + \frac{b}{1+\frac{u}{E_0\eta^2}}\right]\rho u + A \chi + B \chi^2\]
+  \item Expanded $(\rhoIV <\rho < \rho_0)$ cold state $(u<\uiv)$
+    Same thing
+  \item Expanded but completely vaporized $(\rho < \rho_0)$ hot state $(u>\ucv)$
+    \[p = a\rho u + \left[\frac{b}{1+\frac{u}{E_0\eta^2}}\rho u + A \chi e^{-\beta\left(\frac{\rho_0}{\rho} -1\right)}  \right] e^{-\alpha \left(\frac{\rho_0}{\rho} -1\right)^2} \]
+  \item Between $(\uiv<u<\ucv)$, $(\rhoIV <\rho < \rho_0)$: linear interpolation
+    \[
+      p = \frac{(u-\uiv)p_3 +  (\ucv-u)p_2}{\ucv - \uiv}
+    \]
+  \item Low energy expansion $(\rho < \rhoIV, u<\uiv)$
+    \[
+      p =  \left[a + \frac{b}{1+\frac{u}{E_0\eta^2}}\right]\rho u + A \chi
+    \]
+
+\end{enumerate}
+
+\subsection{Soundspeed}
+La vitesse du son est définie par
+\[
+  \cs^2 = \left(\pdv{P}{\rho}\right)_s
+\]
+Dans le domaine $(P, \rho, u)$
+\[
+  \odif{P} = \left(\pdv{P}{\rho}\right)_u \odif{\rho} + \left(\pdv{P}{u}\right)_\rho \odif{u}
+\]
+Donc
+\[
+  \cs^2 = \left(\pdv{P}{\rho}\right)_u + \left(\pdv{P}{u}\right)_\rho \left(\pdv{u}{\rho}\right)_s
+\]
+Il faut donc appliquer le premier principe à un processus isentropique dans le domaine $(u, \rho, s)$
+\[
+  \odif{u} = -P\odif V = -P\odif{\frac{1}{\rho}} = \frac{P}{\rho^2}\odif{\rho}
+\]
+
+Finalement
+\[\boxed{
+    \cs^2 = \left(\pdv{P}{\rho}\right)_u + \frac{P}{\rho^2}\left(\pdv{P}{u}\right)_\rho
+}\]
+C'est parti
+Déjà
+
+\begin{align*}
+  \pdv{p}{\rho} &= \pdv{\eta}{\rho}\pdv{p}{\eta} \\
+  \pdv{\eta}{\rho} &= \frac{1}{\rho_0} \\
+  \pdv{\chi}{\eta} &= 1 \\
+  \pdv{\chi^2}{\eta} &= \pdv{(\eta-1)^2}{\eta} = 2(\eta-1) = 2\chi
+\end{align*}
+
+\begin{enumerate}
+  \item Compressed region $\rho\geq\rho_0$
+    \[p = \left[a + \frac{b}{1+\frac{u}{E_0\eta^2}}\right]\rho_0\eta u + A \chi + B \chi^2\]
+    Alors
+    \begin{align*}
+      \pdv{p}{\eta} &=\left[a + \frac{b}{1+\frac{u}{E_0\eta^2}}\right]\rho_0 u  + \frac{u}{E_0}\frac{2}{\eta^3} \left[\frac{b}{\left(1+\frac{u}{E_0\eta^2}\right)^2}\right]\rho_0 \eta u \\ &+A + 2B\chi \\
+      \pdv{p}{\rho} &= \left[a + \frac{b}{1+\frac{u}{E_0\eta^2}}\right] u  + \frac{u^2}{E_0}\frac{2}{\eta^2} \left[\frac{b}{\left(1+\frac{u}{E_0\eta^2}\right)^2}\right] + \frac{1}{\rho_0} (A + 2B\chi)
+    \end{align*}
+    D'autre part
+    \begin{align*}
+      \pdv{p}{u} &= \left[a + \frac{b}{1+\frac{u}{E_0\eta^2}}\right]\rho -\frac{1}{E_0\eta^2} \left[\frac{b}{\left(1+\frac{u}{E_0\eta^2}\right)^2}\right]\rho u \\
+      \frac{p}{\rho^2}\pdv{p}{u} &= \frac{p}{\rho} \left\{ \left[a + \frac{b}{1+\frac{u}{E_0\eta^2}}\right]-\frac{u}{E_0\eta^2} \left[\frac{b}{\left(1+\frac{u}{E_0\eta^2}\right)^2}\right]\right\} \\
+      \frac{p}{\rho^2}\pdv{p}{u} &= \frac{p}{\rho} \left\{ \left[a + \frac{b}{\left(1+\frac{u}{E_0\eta^2}\right)^2}\right]\right\}
+    \end{align*}
+    Finalement,
+
+  \item Expanded $(\rhoIV <\rho < \rho_0)$ cold state $(u<\uiv)$
+    Same thing ??
+  \item Expanded but completely vaporized $(\rho < \rho_0)$ hot state $(u>\ucv)$
+    \[p = a\rho u + \left[\frac{b}{1+\frac{u}{E_0\eta^2}}\rho u + A \chi e^{-\beta\left(\frac{\rho_0}{\rho} -1\right)}  \right] e^{-\alpha \left(\frac{\rho_0}{\rho} -1\right)^2} \]
+
+    On a les dérivées partielles :
+    \begin{align*}
+      \pdv{p}{u} &= a\rho +  b\rho \left[\frac{\left(1+\frac{u}{E_0\eta^2}\right)-\frac{u}{E_0\eta^2}}{\left(1+\frac{u}{E_0\eta^2}\right)^2}\right] \mathcal{E} \\
+      \frac{p}{\rho^2}\pdv{p}{u} &= \frac{p}{\rho} \left\{a + b\frac{1}{\left(1+\frac{u}{E_0\eta^2}\right)^2}\mathcal{E}\right\} \\
+      \mathcal{E} &= e^{-\alpha\left(\frac{\rho_0}{\rho}-1\right)^2} = e^{-\alpha X} \\
+      X&= \frac{\rho_0}{\rho} -1 = \frac{1}{\eta} -1
+    \end{align*}
+
+    \begin{align*}
+      \pdv{p}{\eta} &= a\rho_0 u + b\left( \left[\frac{1}{1+\frac{u}{E_0\eta^2}}\right]\rho_0 u + \frac{\frac{2u}{E_0\eta^3}}{\left(1+\frac{u}{E_0\eta^2}\right)^2}\rho u \right)\mathcal{E} \\
+      &+ \left( A \left[1 + \chi\frac{\beta}{\eta^2}\right] e^{-\beta X} \right) \mathcal{E} \\
+      &+ \left[\frac{b\rho u}{1+\frac{u}{E_0\eta^2}} + A \chi e^{-\beta X} \right] \left(\frac{2\alpha X}{\eta^2}\right)\mathcal{E}
+    \end{align*}
+
+    Soit
+    \begin{align*}
+      \pdv{p}{\rho} &= a u + \mathcal{E}\left( b\left[\frac{1+ \frac{2\alpha X}{\eta}}{1+\frac{u}{E_0\eta^2}} + \frac{2 u }{E_0 \eta^2 \left(1+\frac{u}{E_0\eta^2}\right)^2} \right] u  + \frac{A}{\rho_0} \left(1 + (2\alpha X + \beta)\frac{ \chi}{\eta^2} \right)e^{-\beta X} \right) \\
+    \end{align*}
+
+  \item Between $(\uiv<u<\ucv)$, $(\rhoIV <\rho < \rho_0)$: linear interpolation
+    \[
+      p = \frac{(u-\uiv)p_3 +  (\ucv-u)p_2}{\ucv - \uiv}
+    \]
+    \begin{align*}
+      \pdv{p}{\eta} &= \frac{(u-\uiv)\pdv{p_3}{\eta} +  (\ucv-u)\pdv{p_2}{\eta}}{\ucv - \uiv} \\
+      \pdv{p}{u}&= \frac{p_3 - p_2 + (u-\uiv)\pdv{p_3}{u} +  (\ucv-u)\pdv{p_2}{u} }{\ucv - \uiv}
+    \end{align*}
+    % \item Low energy expansion $(\rho < \rhoIV, u<\uiv)$
+    %   \[
+    %     p =  \left[a + \frac{b}{1+\frac{u}{E_0\eta^2}}\right]\rho u + A \chi
+    %   \]
+
+    % \begin{align*}
+    %   \cs^2 &= \left[a + \frac{b}{1+\frac{u}{E_0\eta^2}}\right]u  + \frac{u}{E_0}\frac{2}{\eta^3} \left[\frac{b}{\left(1+\frac{u}{E_0\eta^2}\right)^2}\right] \eta u \\
+    %   &+ \frac{1}{\rho_0}(A + 2B\chi) + \frac{P}{\rho^2}\left(\left[a + \frac{b}{1+\frac{u}{E_0\eta^2}}\right]\rho -\frac{1}{E_0\eta^2} \left[\frac{b}{\left(1+\frac{u}{E_0\eta^2}\right)^2}\right]\rho u\right)
+    % \end{align*}
+
+    % \[\boxed{
+    %   \cs^2 = \left[a + \frac{b}{1+\frac{u}{E_0\eta^2}}\right]\left(u + \frac{P}{\rho}\right) + \frac{u}{E_0\eta^2} \left[\frac{b}{\left(1+\frac{u}{E_0\eta^2}\right)^2}\right] \left(2u - \frac{P}{\rho}\right) + \frac{1}{\rho_0}(A + 2B\chi)}
+    % \]
+    % En combinant tout
+
+    % \begin{align*}
+    %   \cs^2 &= a u + b\left( \left[\frac{1}{1+\frac{u}{E_0\eta^2}}\right] u + \frac{\frac{2u}{E_0\eta^3}}{\left(1+\frac{u}{E_0\eta^2}\right)^2}\eta u \right)\mathcal{E} \\
+    %   &+ \frac{1}{\rho_0}\left( A \left[1 + \chi\frac{\beta}{\eta^2}\right] e^{-\beta X} \right) \mathcal{E} \\
+    %   & + \left[\frac{b\eta u}{1+\frac{u}{E_0\eta^2}} + \frac{1}{\rho_0}A \chi e^{-\beta X} \right] \left(\frac{2\alpha X}{\eta^2}\right)\mathcal{E} \\
+    %   & \frac{p}{\rho} \left\{a + b\frac{1}{\left(1+\frac{u}{E_0\eta^2}\right)^2}\mathcal{E}\right\}
+    % \end{align*}
+
+    % Finalement, la vitesse du son :
+    % \[
+    %   \boxed{
+    %     \begin{aligned}
+    %       \cs^2 &= a u + \frac{p}{\rho} \left( a + \frac{b}{\left(1+\frac{u}{E_0\eta^2}\right)^2} \mathcal{E} \right) \\
+    %       &+ \mathcal{E}\left( b\left[\frac{1+\frac{2\alpha X}{\eta^2}}{1+\frac{u}{E_0\eta^2}} + \frac{2 u}{E_0 \eta^3 \left(1+\frac{u}{E_0\eta^2}\right)^2} \right]\eta u  + \frac{A}{\rho_0} \left(1 + \frac{(\beta+2\alpha X) \chi}{\eta^2} \right)e^{-\beta X} \right) \\
+    %     \end{aligned}
+    %   }
+    % \]
+
+\end{enumerate}
+
+\subsection{Initialiser une sphère de Tillotson}
+\subsubsection{Cas général}
+
+\begin{align*}
+  \frac{1}{r^2}\odv{}{r}\left(\frac{r^2}{\rho}\odv{p}{r}\right) &= -4\pi G\rho \\
+  p &= \left[a + \frac{b}{1+\frac{u}{E_0\eta^2}}\right]\rho u + A \chi + B \chi^2
+\end{align*}
+
+La première équation s'écrit
+\begin{align*}
+  \odv{}{r}\left(\frac{1}{\rho}\odv{p}{r}\right) + \frac2r\frac{1}{\rho}\odv{p}{r} &= -4\pi G\rho \\
+  \odv{}{r}\left(\frac{1}{\rho}\odv{p}{r}\right) + \frac2r\frac{1}{\rho}\odv{p}{r} &= -4\pi G\rho \\
+  \left[-\frac{\odv{\rho}{r}}{\rho^2}\odv{p}{r} + \frac{1}{\rho}\odv[order=2]{p}{r}\right] + \frac2r\frac{1}{\rho}\odv{p}{r} &= -4\pi G\rho \\
+  \odv[order=2]{p}{r}  + \left(\frac2r -\frac{\odv{\rho}{r}}{\rho}\right) \odv{p}{r} &= -4\pi G\rho^2 \\
+\end{align*}
+Or
+\[
+  P=P(\rho)
+\]
+Donc
+\begin{align*}
+  \odv{p}{r} &= \odv{p}{\rho}\odv{\rho}{r}\\
+  \odv[order=2]{P}{r} &= \odv{p}{\rho}\odv[order=2]{\rho}{r} + \odv{}{r}\left(\odv{p}{\rho}\right)\odv{\rho}{r} \\
+  & = \odv{p}{\rho}\odv[order=2]{\rho}{r} + \odv[order=2]{P}{\rho}\left(\odv{\rho}{r}\right)^2
+\end{align*}
+
+Finalement
+\begin{align*}
+  \odv{p}{\rho}\odv[order=2]{\rho}{r} + \odv[order=2]{P}{\rho}\left(\odv{\rho}{r}\right)^2 + \left(\frac2r -\frac{\odv{\rho}{r}}{\rho}\right) \left(\odv{p}{\rho}\right)\left(\odv{\rho}{r}\right) &= -4\pi G\rho^2
+\end{align*}
+De manière plus lisible,
+\begin{align*}
+  p'\odv[order=2]{\rho}{r} + p''\left(\odv{\rho}{r}\right)^2 + p'\left(\frac2r -\frac{\odv{\rho}{r}}{\rho}\right) \left(\odv{\rho}{r}\right) &= -4\pi G\rho^2
+\end{align*}
+
+Sous forme vectorielle
+\begin{align*}
+  \mu&=\rho\\
+  \nu&=\odv{\rho}{r}\\
+\end{align*}
+\begin{align*}
+  \odv{\mu}{r} &= \nu \\
+  p'(\mu) \odv{\nu}{r} + p''(\mu)v^2 + p'(\mu)\left(\frac2r -\frac{\nu}{\mu}\right)v &= -4\pi G \mu^2
+\end{align*}
+
+Finalement,
+\begin{align*}
+  \odv{\mu}{r} &= \nu \\
+  \odv{\nu}{r} &=  \left(\frac{\nu}{\mu}-\frac2r\right)\nu - \frac{p''(\mu)}{p'(\mu)}\nu^2  - \frac{1}{p'(\mu)}4\pi G \mu^2
+\end{align*}
+
+\subsubsection{Application à Tillotson}
+On part d'une sphère condensée
+\begin{align*}
+  p &= \left[a + \frac{b}{1+\frac{u}{E_0\eta^2}}\right]\rho u + A \chi + B \chi^2
+  \pdv{p}{\rho} \\
+  \pdv{p}{\rho} &= \left[a + \frac{b}{1+\frac{u}{E_0\eta^2}}\right] u  + \frac{u^2}{E_0}\frac{2}{\eta^2} \left[\frac{b}{\left(1+\frac{u}{E_0\eta^2}\right)^2}\right] + \frac{1}{\rho_0} (A + 2B\chi) \\
+  \rho_0 \pdv[order=2]{p}{\rho} &= \left[\frac{2\frac{u}{E_0 \eta^3} bu}{\left(1+\frac{u}{E_0\eta^2}\right)^2}\right]  + b\frac{u^2}{E_0}\frac{2}{\eta^2} \left[\frac{4\frac{u}{E_0 \eta^3}}{\left(1+\frac{u}{E_0\eta^2}\right)^3}\right] - \frac{u^2}{E_0}\frac{4}{\eta^3} \left[\frac{b}{\left(1+\frac{u}{E_0\eta^2}\right)^2}\right]+ \frac{2B}{\rho_0}  \\
+  & =  \frac{8b\frac{u^3}{E_0^2 \eta^5}}{\left(1+\frac{u}{E_0\eta^2}\right)^3} -  \frac{2b \frac{u^2}{E_0\eta^3}}{\left(1+\frac{u}{E_0\eta^2}\right)^2}+ \frac{2B}{\rho_0}
+\end{align*}
 
 \end{document}
