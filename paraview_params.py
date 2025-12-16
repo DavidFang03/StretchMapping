@@ -1,10 +1,13 @@
 import json
 from paraview import vtk
 
+json_path = "/home/dfang/Documents/NumProjectM2/StretchMapping/outputs/f2_200k_fmm_cd10_rescaled_001/inputparams.json"
+
+
 def format_param(key, value):
     if key in ["y0", "n"]:
         valuestr = value
-    elif key in ["mtot_target"]:
+    elif key in ["mtot_target", "rescale"]:
         valuestr = f"{value:.3f}"
     elif isinstance(value, float):
         if value > 10 or value < 0.1:
@@ -30,8 +33,9 @@ def format_inputparams(input_params):
         string += line
     return string
 
+
 try:
-    with open(json_path, 'r') as f:
+    with open(json_path, "r") as f:
         data = json.load(f)
 except IOError:
     data = {"Erreur": "Fichier introuvable"}
@@ -39,7 +43,7 @@ except IOError:
 txt = format_inputparams(data)
 
 col = vtk.vtkStringArray()
-col.SetName("InfoText") # Nom de la colonne
+col.SetName("InfoText")  # Nom de la colonne
 col.InsertNextValue(txt)
 
 output.GetRowData().AddArray(col)

@@ -6,7 +6,7 @@ import glob
 import os
 import json
 
-folder = "f2_200k_fmm_cd10_000"
+folder = "f2_200k_mm_cd10_rescaled13_000"
 shamfolder = f"./outputs/{folder}"
 vtkfolder = f"./vtk/{folder}"
 files_list = []
