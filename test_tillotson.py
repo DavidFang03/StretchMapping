@@ -4,11 +4,13 @@ import os
 import glob
 import sham_utilities
 import stretchmap_utilities as su
+import hydrostatic as hy
 import px_utilities
 import ffmpeg
 
 
 shamrock.enable_experimental_features()
+do_px = True
 
 
 def handle_dump(dump_prefix, overwrite=False):
@@ -87,10 +89,16 @@ def initModel():
     # the gravitational constant = 1 in code units
     si = shamrock.UnitSystem()
     sicte = shamrock.Constants(si)
+    # codeu = shamrock.UnitSystem(
+    #     unit_length=sicte.solar_radius(),
+    #     unit_mass=sicte.sol_mass(),
+    #     unit_time=np.sqrt(sicte.solar_radius() ** 3.0 / sicte.G() / sicte.sol_mass()),
+    # )
+
     codeu = shamrock.UnitSystem(
-        unit_length=sicte.solar_radius(),
-        unit_mass=sicte.sol_mass(),
-        unit_time=np.sqrt(sicte.solar_radius() ** 3.0 / sicte.G() / sicte.sol_mass()),
+        unit_length=sicte.earth_radius(),
+        unit_mass=sicte.earth_mass(),
+        unit_time=np.sqrt(sicte.earth_radius() ** 3.0 / sicte.G() / sicte.earth_mass()),
     )
 
     ucte = shamrock.Constants(codeu)
@@ -174,13 +182,15 @@ def dump(model, dump_path):
     print(f"Dumped {dump_path}")
 
 
-def plot(fig, img_path, model, ctx, rhotarget, inputparams, eos=None):
+def plot(fig, img_path, model, ctx, rhotarget, inputparams, unit, eos=None):
     mpart = model.get_particle_mass()
 
     inputparams["pmass"] = mpart
 
     if fig is None:
-        fig = px_utilities.px_3d_and_rho(model, ctx, img_path, rhotarget, inputparams)
+        fig = px_utilities.px_3d_and_rho(
+            model, ctx, img_path, rhotarget, inputparams, unit
+        )
     else:
         px_utilities.update_px_3d_and_rho(fig, model, ctx, img_path, inputparams)
     print("I will write this image in", img_path)
@@ -198,7 +208,7 @@ def write_json_params(inputparams, json_path):
         json.dump(inputparams, fp, indent=4)
 
 
-def test_init(model, ctx, rhotarget, inputparams, dump_prefix):
+def test_init(model, ctx, rhotarget, inputparams, dump_prefix, unit):
     """
     Dump and plot initial configuration then show it.
     Evolve with dt = 0, dump and plot.
@@ -214,7 +224,8 @@ def test_init(model, ctx, rhotarget, inputparams, dump_prefix):
     dump_path = f"{newpath_withoutext}.sham"
     img_path = f"{newpath_withoutext}.png"
     dump(model, dump_path=dump_path)  # **before** plotting
-    # fig = plot(None, img_path, model, ctx, rhotarget, inputparams, eos)
+    if do_px:
+        fig = plot(None, img_path, model, ctx, rhotarget, inputparams, unit, eos)
     model.change_htolerances(coarse=1.3, fine=min(1.3, 1.1))
     model.evolve_once_override_time(0.0, 0.0)
     model.change_htolerances(coarse=1.1, fine=min(1.1, 1.1))
@@ -229,13 +240,14 @@ def test_init(model, ctx, rhotarget, inputparams, dump_prefix):
     newpath_withoutext = sham_utilities.gen_new_path_withoutext(dump_prefix)
     img_path = f"{newpath_withoutext}.png"
     dump_path = f"{newpath_withoutext}.sham"
-    # plot(fig, img_path, model, ctx, rhotarget, inputparams)
+    if do_px:
+        plot(fig, img_path, model, ctx, rhotarget, inputparams, unit)
     dump(model, dump_path=dump_path)
     # fig.show()
     return inputparams, fig
 
 
-def loop(fig, t_stop, model, ctx, rhotarget, inputparams, dump_prefix):
+def loop(fig, t_stop, model, ctx, rhotarget, inputparams, dump_prefix, unit):
     for i, t in enumerate(t_stop):
         print(f"looping, still {len(t_stop)-1} to go")
         model.change_htolerances(coarse=1.3, fine=min(1.3, 1.1))
@@ -245,13 +257,32 @@ def loop(fig, t_stop, model, ctx, rhotarget, inputparams, dump_prefix):
         dump_path = f"{newpath_withoutext}.sham"
         img_path = f"{newpath_withoutext}.png"
         dump(model, dump_path=dump_path)  # **before** plotting
-        # plot(fig, img_path, model, ctx, rhotarget, inputparams)
+        if do_px:
+            plot(fig, img_path, model, ctx, rhotarget, inputparams, unit)
 
 
 def setup_Fermi(y0, mu_e):
     tabx, tabrho = su.solve_Chandrasekhar(y0, mu_e)
     tabx /= su.Rsol
     tabrho /= su.density
+
+    arr1inds = tabx.argsort()
+    tabx = tabx[arr1inds]
+    tabrho = tabrho[arr1inds]
+    mtot_target = su.integrate_target([tabx, tabrho])
+
+    return tabx, tabrho, mtot_target
+
+
+def setup_Tillotson(till_values):
+    si = shamrock.UnitSystem()
+    sicte = shamrock.Constants(si)
+    Rearth = sicte.earth_radius()
+    Mearth = sicte.earth_mass()
+    density = Mearth / Rearth**3
+    tabx, tabrho = hy.solve_hydrostatic(till_values)
+    tabx /= Rearth
+    tabrho /= density
 
     arr1inds = tabx.argsort()
     tabx = tabx[arr1inds]
@@ -268,47 +299,37 @@ if __name__ == "__main__":
     #!####################################
     restart = False
     durationrestart = 0
-    folder_restart = "./outputs/f2_2000k_SG_cd10_000/"
     overwrite = True
     # durationrestart = 1 #  + 1 fois la simu initiale
     # durationrestart = 0
-    SG = "fmm"
+    SG = "mm"
     nb_dumps = 200
-    tf_cl = 24  # durée de la run en temps de chute libre (environ)
+    tf_cl = 2  # durée de la run en temps de chute libre (environ)
 
-    N_target = 2e5
+    N_target = 2e3
 
-    eos = "fermi"
+    eos = "tillotson"
+    kwargs_tillotson = {
+        "rho0": 2700.0,  # kg/m^3
+        "E0": 1.6e7,  # J/kg (Spécifique energy of sublimation approx)
+        "a": 0.5,
+        "b": 1.3,
+        "A": 3.5e10,  # Pa (Bulk modulus A)
+        "B": 1.8e10,  # Pa (Non-linear modulus B)
+        "alpha": 5.0,  # Paramètres alpha/beta (pas utilisés dans la dérivée simple ici mais souvent dans EoS complète)
+        "beta": 5.0,
+        "u_int": 1e5,  # Energie interne initiale (J/kg) - "Froid"
+        "rho_center": 3000.0,  # On force une densité centrale > rho0 pour voir le profil
+    }
     # eos = "polytropic"
 
     #! #####################################
     inputparams = {}
 
-    if eos == "fermi":
-        y0 = 5
-        mu_e = 2
-        eos = {"name": "fermi", "id": f"f{mu_e}", "values": {"mu_e": mu_e, "y0": y0}}
-        tabx, tabrho, mtot_target = setup_Fermi(y0, mu_e)  # already normalized
-        # mtot_target *= 1.01
+    if eos == "tillotson":
+        eos = {"name": "tillotson", "id": f"tillotson", "values": kwargs_tillotson}
+        tabx, tabrho, mtot_target = setup_Tillotson(kwargs_tillotson)
         rhoprofiletxt = "solve_ivp(RK45)"
-    elif eos == "polytropic":
-        mtot_target = 3
-        K = 1
-        n = 1
-        eos = {
-            "name": "polytropic",
-            "id": f"n{n}",
-            "values": {"n": n, "gamma": 1 + 1 / n, "K": K},
-        }
-        xmax = get_radius_n1(eos["values"]["K"], codeu)
-        rhoprofile = lambda r: np.sinc(r / xmax)
-        rhoprofiletxt = "sinc"
-        tabx = np.linspace(0, xmax)
-        tabrho = rhoprofile(tabx)
-        # Normalizing
-        integral_profile = su.integrate_target([tabx, tabrho])
-        rho0 = mtot_target / integral_profile
-        rhotarget = np.array([tabx, rho0 * tabrho])
 
     xmax = np.max(tabx)
     rhotarget = np.array([tabx, tabrho])
@@ -319,8 +340,8 @@ if __name__ == "__main__":
     print("mtot integrated", mtot_target)
     hfact = 1.2  # ou la valeur voulue
     m = mtot_target / (N_target / 2)  # masse par particule
-    h = hfact * (m / np.max(tabrho)) ** (1.0 / 3.0)  # h min à peu près
-    eps_plummer = h
+    h = hfact * (m / np.max(tabrho)) ** (1.0 / 3.0)
+    eps_plummer = h  # h min à peu près
 
     dump_prefix = f"{eos["id"]}_"
 
@@ -402,7 +423,7 @@ if __name__ == "__main__":
 
     if restart:
         # fig = None
-        loop(None, t_stop, model, ctx, rhotarget, inputparams, dump_prefix)
+        loop(None, t_stop, model, ctx, rhotarget, inputparams, dump_prefix, codeu)
         print("Running completed, showing final plot")
         ## ! Video
         # fps = px_utilities.compute_fps(inputparams)
@@ -412,20 +433,22 @@ if __name__ == "__main__":
         # print(f"movie: {filemp4}")
     else:
         ## ! Making sure everything nicely settled
-        inputparams, fig = test_init(model, ctx, rhotarget, inputparams, dump_prefix)
+        inputparams, fig = test_init(
+            model, ctx, rhotarget, inputparams, dump_prefix, codeu
+        )
         write_json_params(inputparams, json_path=f"{folder_path}/inputparams.json")
         print("Init test completed, running")
         ## ! Running
-        loop(None, t_stop, model, ctx, rhotarget, inputparams, dump_prefix)
+        loop(fig, t_stop, model, ctx, rhotarget, inputparams, dump_prefix, codeu)
         print("Running completed, showing final plot")
         ## ! Video
-        # fps = px_utilities.compute_fps(inputparams)
-        # # fps = 2
-        # pattern_png = f"{folder_path}/*.png"
-        # filemp4 = f"{folder_path}/{dump_prefix}.mp4"
-        # px_utilities.movie(pattern_png, filemp4, fps)
-        # print(f"movie: {filemp4}")
-        # dump(model, dump_path=f"{folder_name}/finaldump.sham")
+        if do_px:
+            fps = px_utilities.compute_fps(inputparams)
+            # fps = 2
+            pattern_png = f"{folder_path}/*.png"
+            filemp4 = f"{folder_path}/{dump_prefix}.mp4"
+            px_utilities.movie(pattern_png, filemp4, fps)
+            print(f"movie: {filemp4}")
 
 
-# ./shamrock --sycl-cfg 0:0 --loglevel 1 --rscript ./test_fermi.py
+# ./shamrock --sycl-cfg 0:0 --loglevel 1 --rscript ./test_tillotson.py

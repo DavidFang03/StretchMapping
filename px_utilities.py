@@ -3,6 +3,7 @@ import numpy as np
 import stretchmap_utilities as su
 import sham_utilities
 from plotly.subplots import make_subplots
+import hydrostatic as hy
 
 style_target = "dash"
 density_color = "blue"
@@ -51,7 +52,7 @@ def format_inputparams(input_params):
     return string
 
 
-def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params):
+def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, unit):
     """
     I don't normalize here, please be sure that rhotarget is normalized
 
@@ -93,7 +94,7 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params):
         subplot_titles=("Density profile", "Soundspeed and Pressure profiles", ""),
     )
 
-    rhotab = rho0 * rhotarget[1]
+    rhotab = rhotarget[1]
     rtab = rhotarget[0]
     # ! Density profile
     fig.add_trace(
@@ -152,8 +153,11 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params):
         row=1,
     )
 
-    Pfunc, csfunc = su.get_p_and_cs_func(eos)
+    P_cs_func = su.get_p_and_cs_func(eos, unit)
+    mask = rhotab != 0
+    data_eos = P_cs_func(rhotab[mask])
     cs_data = data["soundspeed"]
+
     # ! Soundspeed profile
     fig.add_trace(
         go.Scatter(
@@ -168,11 +172,11 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params):
         col=1,
         secondary_y=False,
     )
-    mask = rhotab != 0
+
     fig.add_trace(
         go.Scatter(
             x=rtab[mask],
-            y=csfunc(rhotab[mask]),
+            y=data_eos[0],
             mode="lines",
             line=dict(color=soundspeed_color, dash=style_target),
             showlegend=False,
@@ -199,8 +203,8 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params):
         )
         fig.add_trace(
             go.Scatter(
-                x=rtab,
-                y=Pfunc(rhotab),
+                x=rtab[mask],
+                y=data_eos[1],
                 mode="lines",
                 line=dict(color=pressure_color, dash=style_target),
                 showlegend=False,

@@ -143,6 +143,182 @@ def solve_hydrostatic(kwargs):
     return R_discrete, Rho_discrete
 
 
+import numpy as np
+
+
+def get_tillotson_pressure_sound(rho, u, p):
+    """
+    Calcule la Pression (P) et la vitesse du son (cs) pour l'EOS Tillotson.
+    Implémentation boucle unique.
+
+    Args:
+        rho: Densité (float ou array)
+        u:   Énergie interne (float ou array)
+        p:   Dictionnaire de paramètres {'rho0', 'a', 'b', 'A', 'B', 'E0', 'alpha', 'beta', 'u_iv', 'u_cv'}
+    """
+    # 1. Préparation des données
+    rho = np.atleast_1d(rho)
+    u = np.atleast_1d(u)
+    n_points = len(rho)
+    if len(u) == 1:
+        u = [u for _ in range(n_points)]
+
+    P_out = np.zeros(n_points)
+    cs_out = np.zeros(n_points)
+
+    # Extraction des paramètres pour lisibilité
+    rho0 = p["rho0"]
+    E0 = p["E0"]
+    a, b = p["a"], p["b"]
+    A, B = p["A"], p["B"]
+    alpha, beta = p["alpha"], p["beta"]
+    u_iv = p.get("u_iv", 0.0)
+    u_cv = p.get("u_cv", 1e30)
+    delta_u = u_cv - u_iv
+
+    # 2. Boucle sur chaque élément
+    for i in range(n_points):
+        r = rho[i]  # densité locale
+        eng = u[i]  # énergie locale
+
+        # Variables communes
+        eta = r / rho0
+        mu = eta - 1.0
+        omega = eng / (E0 * (eta**2))
+        denom = 1.0 + omega
+
+        # Initialisation des variables temporaires
+        P_val, dPr, dPu = 0.0, 0.0, 0.0
+
+        # --- DÉTECTION DE LA RÉGION ---
+        is_cold = False
+        is_hot = False
+
+        # Masque logique simple
+        if (r >= rho0) or (eng < u_iv):
+            # Région Froide / Compressée
+            is_cold = True
+            regime = "COLD"
+        elif (r < rho0) and (eng > u_cv):
+            # Région Chaude / Vaporisée
+            is_hot = True
+            regime = "HOT"
+        else:
+            # Région Intermédiaire (nécessite les deux calculs)
+            is_cold = True
+            is_hot = True
+            regime = "INTER"
+
+        # --- CALCULS PHYSIQUES ---
+
+        # Stockage temporaire pour l'interpolation
+        Pc, dPrc, dPuc = 0.0, 0.0, 0.0
+        Ph, dPrh, dPuh = 0.0, 0.0, 0.0
+
+        # A. Formules "FROIDES" (Cold)
+        if is_cold:
+            # Pression
+            Pc = (a + b / denom) * r * eng + A * mu + B * (mu**2)
+
+            # dP/du
+            dPuc = r * (a + b / (denom**2))
+
+            # dP/drho
+            term1 = eng * (a + b / denom)
+            # d(omega)/drho = -2*omega/rho.  d(1/(1+w))/drho = -1/(1+w)^2 * dw/dr
+            term2 = (2.0 * b * eng * omega) / (denom**2)
+            term3 = A / rho0
+            term4 = (2.0 * B * mu) / rho0
+            dPrc = term1 + term2 + term3 + term4
+
+        # B. Formules "CHAUDES" (Hot)
+        if is_hot:
+            X = (1.0 / eta) - 1.0  # (rho0/rho) - 1
+            exp_beta = np.exp(-beta * X)
+            exp_alpha = np.exp(-alpha * (X**2))
+
+            bracket = (b * r * eng) / denom + A * mu * exp_beta
+
+            # Pression
+            Ph = a * r * eng + bracket * exp_alpha
+
+            # dP/du
+            dPuh = a * r + (b * r / (denom**2)) * exp_alpha
+
+            # dP/drho
+            dX_drho = -1.0 / (rho0 * eta**2)  # dérivée de X par rapport à rho
+            d_exp_alpha = exp_alpha * (-2.0 * alpha * X) * dX_drho
+            d_exp_beta = exp_beta * (-beta) * dX_drho
+
+            # Dérivée du terme entre crochets
+            # d(b*rho*u / (1+w)) / drho
+            d_term1 = (b * eng * denom - (b * r * eng) * (-2 * omega / r)) / (denom**2)
+            # d(A*mu*exp_beta) / drho
+            d_term2 = A * ((1.0 / rho0) * exp_beta + mu * d_exp_beta)
+
+            d_bracket = d_term1 + d_term2
+
+            dPrh = a * eng + d_bracket * exp_alpha + bracket * d_exp_alpha
+
+        # --- COMBINAISON DES RESULTATS ---
+
+        if regime == "COLD":
+            P_val = Pc
+            dPr = dPrc
+            dPu = dPuc
+
+        elif regime == "HOT":
+            P_val = Ph
+            dPr = dPrh
+            dPu = dPuh
+
+        elif regime == "INTER":
+            # Interpolation linéaire
+            x = (eng - u_iv) / delta_u  # Poids du chaud
+            y = (u_cv - eng) / delta_u  # Poids du froid
+
+            P_val = x * Ph + y * Pc
+
+            # Dérivées interpolées
+            dPr = x * dPrh + y * dPrc
+            # Pour dP/du, on applique la règle du produit sur les poids x(u) et y(u)
+            # dx/du = 1/delta, dy/du = -1/delta
+            dPu = (Ph - Pc) / delta_u + (x * dPuh + y * dPuc)
+
+        # 3. Calcul final Vitesse du son
+        P_out[i] = P_val
+
+        # c^2 = dP/drho + (P / rho^2) * dP/du
+        c2 = dPr + (P_val / (r**2)) * dPu
+
+        if c2 > 0:
+            cs_out[i] = np.sqrt(c2)
+        else:
+            cs_out[i] = 1e-8  # Valeur plancher pour éviter plantage
+
+    return P_out, cs_out
+
+
+Rearth = 6.371e3
+Mearth = 5.972e24
+Tearth = np.sqrt(Rearth**3 / (Mearth * 6.67e-11))
+
+
+class Unitsystem:
+    def __init__(self):
+        pass
+
+    def to(self, name):
+        if name == "metre":
+            return Rearth
+        elif name == "second":
+            return Tearth
+        elif name == "kilogram":
+            return Mearth
+
+
+codeearth = Unitsystem()
+
 if __name__ == "__main__":
     # Paramètres pour le Granite (Source: Melosh 1989 / Benz code)
     # Unités SI converties depuis CGS si nécessaire
@@ -168,14 +344,30 @@ if __name__ == "__main__":
     M_total = np.trapezoid(4 * np.pi * R**2 * Rho, R)
     R_km = R[-1] / 1000.0
 
+    eos = {"name": "tillotson", "id": f"tillotson", "values": kwargs_tillotson}
+    import stretchmap_utilities as su
+
+    P_cs_func = su.get_p_and_cs_func(eos, codeearth)
+    mask = Rho != 0
+    P, cs = P_cs_func(Rho[mask])
+
     print(f"Rayon final : {R_km:.2f} km")
     print(f"Masse totale : {M_total:.2e} kg")
 
-    fig, ax = plt.subplots(figsize=(8, 6))
-    ax.plot(R / 1000.0, Rho, label="Density (Granite)", color="firebrick", linewidth=2)
-    ax.set_xlabel("Radius (km)")
-    ax.set_ylabel("Density (kg/m³)")
-    ax.set_title(
+    fig, axs = plt.subplots(3, figsize=(8, 6))
+    fig.subplots_adjust(hspace=0.5)
+    axs[0].plot(
+        R / 1000.0, Rho, label="Density (Granite)", color="firebrick", linewidth=2
+    )
+    axs[1].plot(R / 1000.0, cs)
+    axs[2].plot(R / 1000.0, P)
+
+    for ax in axs:
+        ax.set_xlabel("Radius (km)")
+    axs[0].set_ylabel("Density (kg/m³)")
+    axs[1].set_ylabel("Pressure (kg/m²/s)")
+    axs[2].set_ylabel("Soundspeed (m/s)")
+    axs[0].set_title(
         f"Density profile (condensed Tillotson)\nR_final={R_km:.1f} km, M={M_total:.2e} kg"
     )
     ax.grid(True, linestyle="--", alpha=0.7)

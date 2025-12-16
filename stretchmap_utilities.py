@@ -1,4 +1,5 @@
 import numpy as np
+import hydrostatic as hy
 
 
 def integrate_profile(rhoprofile, rmin, r, dim=1, ngrid=8192):
@@ -203,27 +204,38 @@ def cs_polytropic(rho, K, gamma):
     return np.sqrt(cs2)
 
 
-def get_p_and_cs_func(eos):
+def get_p_and_cs_func(eos, unit):
     """
     get_p_and_cs_func
-    Returns a tuple of functions (P then cs) that take solar units and return solar units
+    Returns a function that take rho in system unit and return (P, cs) in system units
 
-    :param eos: Description
+    :param eos: eos dict
+    :param unit: Shamrock unit
     """
+    length = unit.to("metre")
+    time = unit.to("second")
+    mass = unit.to("kilogram")
+    density = mass / length**3
+    pressure = mass / length / time**2
+    velocity = length / time
     if eos["name"] == "fermi":
         mu_e = eos["values"]["mu_e"]
-        return [
-            lambda rho: P_fermi(rho * density, mu_e) / pressure,
-            lambda rho: cs_fermi(rho * density, mu_e) / velocity,
+        return lambda rho: [
+            P_fermi(rho * density, mu_e) / pressure,
+            cs_fermi(rho * density, mu_e) / velocity,
         ]
+
         # return P_fermi, cs_fermi
     elif eos["name"] == "polytropic":
         K = eos["values"]["K"]
         gamma = 1 + 1 / eos["values"]["n"]
-        return [
-            lambda rho: P_polytropic(rho * density, K, gamma) / pressure,
-            lambda rho: cs_polytropic(rho * density, K, gamma) / velocity,
+        return lambda rho: [
+            P_polytropic(rho * density, K, gamma) / pressure,
+            cs_polytropic(rho * density, K, gamma) / velocity,
         ]
+    elif eos["name"] == "tillotson":
+        values = eos["values"]
+        return lambda rho: hy.get_tillotson_pressure_sound(rho, values["u_int"], values)
 
 
 if __name__ == "__main__":
