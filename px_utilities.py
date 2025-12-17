@@ -155,7 +155,8 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, unit):
 
     P_cs_func = su.get_p_and_cs_func(eos, unit)
     mask = rhotab != 0
-    data_eos = P_cs_func(rhotab[mask])
+    P_target, cs_target = P_cs_func(rhotab[mask])
+    print(rhotab, P_cs_func(rhotab[mask]))
     cs_data = data["soundspeed"]
 
     # ! Soundspeed profile
@@ -176,7 +177,7 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, unit):
     fig.add_trace(
         go.Scatter(
             x=rtab[mask],
-            y=data_eos[0],
+            y=cs_target,
             mode="lines",
             line=dict(color=soundspeed_color, dash=style_target),
             showlegend=False,
@@ -204,7 +205,7 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, unit):
         fig.add_trace(
             go.Scatter(
                 x=rtab[mask],
-                y=data_eos[1],
+                y=P_target,
                 mode="lines",
                 line=dict(color=pressure_color, dash=style_target),
                 showlegend=False,

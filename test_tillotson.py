@@ -275,14 +275,7 @@ def setup_Fermi(y0, mu_e):
 
 
 def setup_Tillotson(till_values):
-    si = shamrock.UnitSystem()
-    sicte = shamrock.Constants(si)
-    Rearth = sicte.earth_radius()
-    Mearth = sicte.earth_mass()
-    density = Mearth / Rearth**3
     tabx, tabrho = hy.solve_hydrostatic(till_values)
-    tabx /= Rearth
-    tabrho /= density
 
     arr1inds = tabx.argsort()
     tabx = tabx[arr1inds]
@@ -321,6 +314,7 @@ if __name__ == "__main__":
         "u_int": 1e5,  # Energie interne initiale (J/kg) - "Froid"
         "rho_center": 3000.0,  # On force une densité centrale > rho0 pour voir le profil
     }
+    kwargs_tillotson = hy.adimension(kwargs_tillotson, codeu)
     # eos = "polytropic"
 
     #! #####################################
@@ -414,13 +408,6 @@ if __name__ == "__main__":
     print(
         f"Ended up with {Npartfinal} particles so Mtot={Npartfinal*pmassfinal}, testing init"
     )
-    # model.set_particle_mass(mtot / Npartfinal)
-    # print(f"mpart should be {mtot / Npartfinal}")
-    # print(f"curretly it is {model.get_particle_mass()}")
-    # print(
-    #     f"Ended up with {Npartfinal} particles so Mtot={Npartfinal*model.get_particle_mass()}, testing init"
-    # )
-
     if restart:
         # fig = None
         loop(None, t_stop, model, ctx, rhotarget, inputparams, dump_prefix, codeu)

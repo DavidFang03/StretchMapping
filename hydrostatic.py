@@ -299,7 +299,7 @@ def get_tillotson_pressure_sound(rho, u, p):
     return P_out, cs_out
 
 
-Rearth = 6.371e3
+Rearth = 6371e3
 Mearth = 5.972e24
 Tearth = np.sqrt(Rearth**3 / (Mearth * 6.67e-11))
 
@@ -317,9 +317,39 @@ class Unitsystem:
             return Mearth
 
 
-codeearth = Unitsystem()
+def adimension(tillotson_values, unit):
+    length = unit.to("metre")
+    time = unit.to("second")
+    mass = unit.to("kilogram")
+    density = mass / (length**3)
+    energy = (length**2) / (time**2)
+    pressure = mass / (length * (time**2))
+
+    # --- Application des conversions ---
+
+    # Groupe DENSITÉ (rho0, rho_center, etc.)
+    for key in ["rho0", "rho_center", "rho_ref"]:
+        if key in tillotson_values:
+            tillotson_values[key] /= density
+
+    # Groupe ÉNERGIE SPÉCIFIQUE (E0, u_iv, u_cv, u_int, u...)
+    # u_iv = incipient vaporization, u_cv = complete vaporization
+    for key in ["E0", "u_iv", "u_cv", "u_int", "us", "es"]:
+        if key in tillotson_values:
+            tillotson_values[key] /= energy
+
+    # Groupe PRESSION (A, B)
+    for key in ["A", "B", "P_ref"]:
+        if key in tillotson_values:
+            tillotson_values[key] /= pressure
+
+    # Les constantes sans dimension (a, b, alpha, beta) restent inchangées.
+
+    return tillotson_values
+
 
 if __name__ == "__main__":
+    codeearth = Unitsystem()
     # Paramètres pour le Granite (Source: Melosh 1989 / Benz code)
     # Unités SI converties depuis CGS si nécessaire
     kwargs_tillotson = {
@@ -334,6 +364,8 @@ if __name__ == "__main__":
         "u_int": 1e5,  # Energie interne initiale (J/kg) - "Froid"
         "rho_center": 4000.0,  # On force une densité centrale > rho0 pour voir le profil
     }
+    kwargs_tillotson = adimension(kwargs_tillotson, codeearth)
+    print(kwargs_tillotson)
 
     print(
         f"Calcul pour un cœur de Granite avec rho_center = {kwargs_tillotson['rho_center']} kg/m3..."
@@ -349,6 +381,7 @@ if __name__ == "__main__":
 
     P_cs_func = su.get_p_and_cs_func(eos, codeearth)
     mask = Rho != 0
+    print(Rho[mask])
     P, cs = P_cs_func(Rho[mask])
 
     print(f"Rayon final : {R_km:.2f} km")
@@ -356,17 +389,15 @@ if __name__ == "__main__":
 
     fig, axs = plt.subplots(3, figsize=(8, 6))
     fig.subplots_adjust(hspace=0.5)
-    axs[0].plot(
-        R / 1000.0, Rho, label="Density (Granite)", color="firebrick", linewidth=2
-    )
-    axs[1].plot(R / 1000.0, cs)
-    axs[2].plot(R / 1000.0, P)
+    axs[0].plot(R, Rho, label="Density (Granite)", color="blue", linewidth=2)
+    axs[1].plot(R, cs, color="magenta")
+    axs[2].plot(R, P, color="green")
 
     for ax in axs:
-        ax.set_xlabel("Radius (km)")
-    axs[0].set_ylabel("Density (kg/m³)")
-    axs[1].set_ylabel("Pressure (kg/m²/s)")
-    axs[2].set_ylabel("Soundspeed (m/s)")
+        ax.set_xlabel("Radius")
+    axs[0].set_ylabel("Density")
+    axs[1].set_ylabel("Soundspeed")
+    axs[2].set_ylabel("Pressure")
     axs[0].set_title(
         f"Density profile (condensed Tillotson)\nR_final={R_km:.1f} km, M={M_total:.2e} kg"
     )
