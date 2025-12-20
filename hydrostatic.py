@@ -118,13 +118,14 @@ def solve_hydrostatic(kwargs, unit):
     vec_initial = [mu_initial, nu_initial]
 
     rmin = 1e-4  # Avoid r=0
-    rmax = 100  # Large enough ?
+    rmax = 100  # Should be large enough
 
     length = unit.to("metre")
     time = unit.to("second")
     mass = unit.to("kilogram")
-    unitG = length**3 * time / mass
+    unitG = length**3 / mass / time**2
     G = 6.67e-11 / (unitG)
+    print("G", G)
     kwargstoivp = kwargs.copy()
     kwargstoivp["G"] = G
 
@@ -144,7 +145,7 @@ def solve_hydrostatic(kwargs, unit):
         R_surface = sol.t_events[0][0]
     else:
         R_surface = sol.t[-1]
-        print("Rmax has not been reached")
+        print("Rmax has not been reached !!!")
 
     num_points = 200
     R_discrete = np.linspace(sol.t[0], R_surface, num_points)
@@ -158,13 +159,12 @@ import numpy as np
 
 def get_tillotson_pressure_sound(rho, u, p):
     """
-    Calcule la Pression (P) et la vitesse du son (cs) pour l'EOS Tillotson.
-    Implémentation boucle unique.
+    Returns (P,cs) Tillotson.
 
     Args:
-        rho: Densité (float ou array)
-        u:   Énergie interne (float ou array)
-        p:   Dictionnaire de paramètres {'rho0', 'a', 'b', 'A', 'B', 'E0', 'alpha', 'beta', 'u_iv', 'u_cv'}
+        rho: Density (float or array)
+        u:   Internal energy (float or array)
+        p:   Tillotson parameters {'rho0', 'a', 'b', 'A', 'B', 'E0', 'alpha', 'beta', 'u_iv', 'u_cv'}
     """
     # 1. Préparation des données
     rho = np.atleast_1d(rho)
@@ -229,6 +229,8 @@ def get_tillotson_pressure_sound(rho, u, p):
         if is_cold:
             # Pression
             Pc = (a + b / denom) * r * eng + A * mu + B * (mu**2)
+            if Pc < 0:
+                Pc = 0
 
             # dP/du
             dPuc = r * (a + b / (denom**2))
@@ -315,16 +317,20 @@ Tearth = np.sqrt(Rearth**3 / (Mearth * 6.67e-11))
 
 
 class Unitsystem:
-    def __init__(self):
+    def __init__(self, unit_name="earth"):
+        if unit_name == "earth":
+            self.length = Rearth
+            self.time = Tearth
+            self.mass = Mearth
         pass
 
     def to(self, name):
         if name == "metre":
-            return Rearth
+            return self.length
         elif name == "second":
-            return Tearth
+            return self.time
         elif name == "kilogram":
-            return Mearth
+            return self.mass
 
 
 def adimension(tillotson_values, unit):
@@ -396,7 +402,6 @@ if __name__ == "__main__":
 
     P_cs_func = su.get_p_and_cs_func(eos, codeearth)
     mask = tabrho != 0
-    print(tabrho[mask])
     P, cs = P_cs_func(tabrho[mask])
 
     print(f"Rayon final : {Rmax:.2f}")
@@ -414,7 +419,7 @@ if __name__ == "__main__":
     axs[1].set_ylabel("Soundspeed")
     axs[2].set_ylabel("Pressure")
     axs[0].set_title(
-        f"Density profile (condensed Tillotson)\nR_final={Rmax:.1f} km, M={M_total:.2e} kg"
+        f"Density profile (condensed Tillotson)\nR_final={Rmax:.1f}, M={M_total:.2e}"
     )
     ax.grid(True, linestyle="--", alpha=0.7)
     ax.legend()
