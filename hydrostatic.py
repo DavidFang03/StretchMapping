@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
+import stretchmap_utilities as su
 
 # Constante Gravitationnelle (SI)
 G = 6.67430e-11
@@ -69,6 +70,7 @@ def hydrostatic_ode(r, vec, kwargs):
     d(nu)/dr = (nu/mu - 2/r)*nu - (p''/p')*nu^2 - (4*pi*G*mu^2)/p'
     """
     mu, nu = vec
+    G = kwargs.get("G")
 
     # Protection contre les valeurs physiques aberrantes
     if mu <= 0:
@@ -103,7 +105,7 @@ def surface_event(r, vec, kwargs):
     return mu - 1.0  # On cherche le zéro de (rho - 1)
 
 
-def solve_hydrostatic(kwargs):
+def solve_hydrostatic(kwargs, unit):
     """Résout l'équilibre hydrostatique"""
 
     surface_event.terminal = True
@@ -116,13 +118,21 @@ def solve_hydrostatic(kwargs):
     vec_initial = [mu_initial, nu_initial]
 
     rmin = 1e-4  # Avoid r=0
-    rmax = 1e8  # Large enough ?
+    rmax = 100  # Large enough ?
+
+    length = unit.to("metre")
+    time = unit.to("second")
+    mass = unit.to("kilogram")
+    unitG = length**3 * time / mass
+    G = 6.67e-11 / (unitG)
+    kwargstoivp = kwargs.copy()
+    kwargstoivp["G"] = G
 
     sol = solve_ivp(
         hydrostatic_ode,
         [rmin, rmax],
         vec_initial,
-        args=(kwargs,),  # Tuple d'un seul élément
+        args=(kwargstoivp,),
         events=surface_event,
         dense_output=True,
         rtol=1e-8,  # Tolérance fine pour la précision
@@ -134,7 +144,7 @@ def solve_hydrostatic(kwargs):
         R_surface = sol.t_events[0][0]
     else:
         R_surface = sol.t[-1]
-        print("Rmax has not been reacher")
+        print("Rmax has not been reached")
 
     num_points = 200
     R_discrete = np.linspace(sol.t[0], R_surface, num_points)
@@ -334,7 +344,12 @@ def adimension(tillotson_values, unit):
 
     # Groupe ÉNERGIE SPÉCIFIQUE (E0, u_iv, u_cv, u_int, u...)
     # u_iv = incipient vaporization, u_cv = complete vaporization
-    for key in ["E0", "u_iv", "u_cv", "u_int", "us", "es"]:
+    for key in [
+        "E0",
+        "u_iv",
+        "u_cv",
+        "u_int",
+    ]:
         if key in tillotson_values:
             tillotson_values[key] /= energy
 
@@ -353,45 +368,45 @@ if __name__ == "__main__":
     # Paramètres pour le Granite (Source: Melosh 1989 / Benz code)
     # Unités SI converties depuis CGS si nécessaire
     kwargs_tillotson = {
-        "rho0": 2700.0,  # kg/m^3
-        "E0": 1.6e7,  # J/kg (Spécifique energy of sublimation approx)
+        "rho0": 7.8e3,  # kg/m^3
+        "E0": 0.095e8,  # J/kg (Spécifique energy of sublimation approx)
         "a": 0.5,
-        "b": 1.3,
-        "A": 3.5e10,  # Pa (Bulk modulus A)
-        "B": 1.8e10,  # Pa (Non-linear modulus B)
-        "alpha": 5.0,  # Paramètres alpha/beta (pas utilisés dans la dérivée simple ici mais souvent dans EoS complète)
+        "b": 1.5,
+        "A": 1.279e11,  # Pa (Bulk modulus A)
+        "B": 1.05e11,  # Pa (Non-linear modulus B)
+        "alpha": 5.0,
         "beta": 5.0,
-        "u_int": 1e5,  # Energie interne initiale (J/kg) - "Froid"
-        "rho_center": 4000.0,  # On force une densité centrale > rho0 pour voir le profil
+        "u_iv": 0.024e8,
+        "u_cv": 0.0867e8,
+        "u_int": 1e5,  # Energie interne initiale (J/kg) - "Froid" (Capa thermique ~ 4e2 -> C\deltaT ~1e5 < u_iv)
+        "rho_center": 8000.0,  # On force une densité centrale > rho0 pour voir le profil
     }
     kwargs_tillotson = adimension(kwargs_tillotson, codeearth)
     print(kwargs_tillotson)
 
-    print(
-        f"Calcul pour un cœur de Granite avec rho_center = {kwargs_tillotson['rho_center']} kg/m3..."
-    )
+    print(f"Fe avec rho_center = {kwargs_tillotson['rho_center']} kg/m3...")
 
-    R, Rho = solve_hydrostatic(kwargs_tillotson)
+    tabx, tabrho = solve_hydrostatic(kwargs_tillotson, codeearth)
 
-    M_total = np.trapezoid(4 * np.pi * R**2 * Rho, R)
-    R_km = R[-1] / 1000.0
+    M_total = su.integrate_target([tabx, tabrho])
+    Rmax = tabx[-1]
 
     eos = {"name": "tillotson", "id": f"tillotson", "values": kwargs_tillotson}
     import stretchmap_utilities as su
 
     P_cs_func = su.get_p_and_cs_func(eos, codeearth)
-    mask = Rho != 0
-    print(Rho[mask])
-    P, cs = P_cs_func(Rho[mask])
+    mask = tabrho != 0
+    print(tabrho[mask])
+    P, cs = P_cs_func(tabrho[mask])
 
-    print(f"Rayon final : {R_km:.2f} km")
-    print(f"Masse totale : {M_total:.2e} kg")
+    print(f"Rayon final : {Rmax:.2f}")
+    print(f"Masse totale : {M_total:.2e}")
 
     fig, axs = plt.subplots(3, figsize=(8, 6))
     fig.subplots_adjust(hspace=0.5)
-    axs[0].plot(R, Rho, label="Density (Granite)", color="blue", linewidth=2)
-    axs[1].plot(R, cs, color="magenta")
-    axs[2].plot(R, P, color="green")
+    axs[0].plot(tabx, tabrho, label="Density (Granite)", color="blue", linewidth=2)
+    axs[1].plot(tabx, cs, color="magenta")
+    axs[2].plot(tabx, P, color="green")
 
     for ax in axs:
         ax.set_xlabel("Radius")
@@ -399,7 +414,7 @@ if __name__ == "__main__":
     axs[1].set_ylabel("Soundspeed")
     axs[2].set_ylabel("Pressure")
     axs[0].set_title(
-        f"Density profile (condensed Tillotson)\nR_final={R_km:.1f} km, M={M_total:.2e} kg"
+        f"Density profile (condensed Tillotson)\nR_final={Rmax:.1f} km, M={M_total:.2e} kg"
     )
     ax.grid(True, linestyle="--", alpha=0.7)
     ax.legend()

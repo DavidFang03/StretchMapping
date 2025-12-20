@@ -156,9 +156,11 @@ En particulier pour $n=2$,
 tl:dr. Pour $n=1$, c'est la valeur de $K$ uniquement qui impose le rayon. La seule chose qu'on impose c'est $\Mtot$ (donc $N_{\text{part}}, m_{\text{part}}$). $\rho_c$ n'a aucune importance ici.
 
 Résumé :
+$R, \Mtot$ sont directement liés.
 \begin{itemize}
-  \item Fermi : On impose $\Mtot$ ce qui contraint $R$ directement.
+  \item Fermi : On impose $y_0$ qui impose $\Mtot, R$  directement.
   \item Polytrope : On impose $K,n=1$ ce qui contraint $R$. Puis $\Mtot$ arrive en dernier. Sinon on peut faire l'inverse : imposer $R$ ce qui contraint $K$.
+  \item Dans le cas général (par ex Tillotson), on impose le rayon ce qui impose la masse totale ou inversément.
 \end{itemize}
 % \[ R_*^{\text{polytrop}} = \sqrt{\frac{\pi K}{2G}} \]
 % En fait en général
@@ -475,6 +477,13 @@ Finalement,
   \odv{\mu}{r} &= \nu \\
   \odv{\nu}{r} &=  \left(\frac{\nu}{\mu}-\frac2r\right)\nu - \frac{p''(\mu)}{p'(\mu)}\nu^2  - \frac{1}{p'(\mu)}4\pi G \mu^2
 \end{align*}
+
+Il reste les conditions aux limites.
+On choisit en premier le rayon de notre boule $R_{\max}$. 
+\begin{align*}
+  \rho(R_{\max}) &= 0
+\end{align*}
+
 
 \subsubsection{Application à Tillotson}
 On part d'une sphère condensée

@@ -135,6 +135,9 @@ def setupModel(model, codeu, dr, xmax, mtot_target, rhotarget, eos, SG, eps_plum
         cfg.set_eos_fermi(eos["values"]["mu_e"])  # mu_e = 2 e.g
     elif eos["name"] == "polytropic":
         cfg.set_eos_polytropic(eos["values"]["K"], eos["values"]["gamma"])
+    elif eos["name"] == "tillotson":
+        # print(recover_tillotson_values(eos["values"]))
+        cfg.set_eos_tillotson(**recover_tillotson_values(eos["values"]))
 
     cfg.set_units(codeu)
     model.set_solver_config(cfg)
@@ -175,6 +178,14 @@ def setupModel(model, codeu, dr, xmax, mtot_target, rhotarget, eos, SG, eps_plum
     model.set_cfl_cour(C_cour)
     model.set_cfl_force(C_force)
     return model, ctx
+
+
+def recover_tillotson_values(values):
+    values_to_shamrock = {}
+    for key, value in values.items():
+        if key in ["rho0", "E0", "A", "B", "a", "b", "alpha", "beta", "u_iv", "u_cv"]:
+            values_to_shamrock[key] = value
+    return values_to_shamrock
 
 
 def dump(model, dump_path):
@@ -275,7 +286,7 @@ def setup_Fermi(y0, mu_e):
 
 
 def setup_Tillotson(till_values):
-    tabx, tabrho = hy.solve_hydrostatic(till_values)
+    tabx, tabrho = hy.solve_hydrostatic(till_values, codeu)
 
     arr1inds = tabx.argsort()
     tabx = tabx[arr1inds]
@@ -302,17 +313,20 @@ if __name__ == "__main__":
     N_target = 2e3
 
     eos = "tillotson"
+    # For Fe [Tillotson 1962]
     kwargs_tillotson = {
-        "rho0": 2700.0,  # kg/m^3
-        "E0": 1.6e7,  # J/kg (Spécifique energy of sublimation approx)
+        "rho0": 7.8e3,  # kg/m^3
+        "E0": 0.095e8,  # J/kg (Spécifique energy of sublimation approx)
         "a": 0.5,
-        "b": 1.3,
-        "A": 3.5e10,  # Pa (Bulk modulus A)
-        "B": 1.8e10,  # Pa (Non-linear modulus B)
-        "alpha": 5.0,  # Paramètres alpha/beta (pas utilisés dans la dérivée simple ici mais souvent dans EoS complète)
+        "b": 1.5,
+        "A": 1.279e11,  # Pa (Bulk modulus A)
+        "B": 1.05e11,  # Pa (Non-linear modulus B)
+        "alpha": 5.0,
         "beta": 5.0,
-        "u_int": 1e5,  # Energie interne initiale (J/kg) - "Froid"
-        "rho_center": 3000.0,  # On force une densité centrale > rho0 pour voir le profil
+        "u_iv": 0.024e8,
+        "u_cv": 0.0867e8,
+        "u_int": 1e5,  # Energie interne initiale (J/kg) - "Froid" (Capa thermique ~ 4e2 -> C\deltaT ~1e5 < u_iv)
+        "rho_center": 8000.0,  # On force une densité centrale > rho0 pour voir le profil
     }
     kwargs_tillotson = hy.adimension(kwargs_tillotson, codeu)
     # eos = "polytropic"
