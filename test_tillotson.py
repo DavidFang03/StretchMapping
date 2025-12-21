@@ -1,4 +1,5 @@
 import shamrock
+
 import numpy as np
 import os
 import glob
@@ -7,7 +8,6 @@ import stretchmap_utilities as su
 import hydrostatic as hy
 import px_utilities
 import ffmpeg
-
 
 shamrock.enable_experimental_features()
 do_px = True

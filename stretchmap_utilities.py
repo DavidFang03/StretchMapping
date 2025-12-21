@@ -235,6 +235,7 @@ def get_p_and_cs_func(eos, unit):
         ]
     elif eos["name"] == "tillotson":
         values = eos["values"]
+        print(values["u_int"])
         return lambda rho: hy.get_tillotson_pressure_sound(rho, values["u_int"], values)
 
 

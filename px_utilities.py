@@ -88,7 +88,7 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, unit):
             [{}, {"type": "scatter3d", "rowspan": 2}],
             [{"secondary_y": haspressure}, {}],
         ],
-        horizontal_spacing=0.15,
+        horizontal_spacing=0.2,
         vertical_spacing=0.05,
         column_widths=[0.6, 0.4],
         subplot_titles=("Density profile", "Soundspeed and Pressure profiles", ""),
@@ -121,10 +121,6 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, unit):
         col=1,
     )
 
-    fig.update_yaxes(range=[0, None], row=1, col=1)
-    # fig.update_yaxes(range=[0, None], row=2, col=1, secondary_y=False)
-    # fig.update_yaxes(range=[0, None], row=2, col=1, secondary_y=True)
-
     # ! 3D scatter
     fig.add_trace(
         go.Scatter3d(
@@ -156,7 +152,7 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, unit):
     P_cs_func = su.get_p_and_cs_func(eos, unit)
     mask = rhotab != 0
     P_target, cs_target = P_cs_func(rhotab[mask])
-    print(rhotab, P_cs_func(rhotab[mask]))
+
     cs_data = data["soundspeed"]
 
     # ! Soundspeed profile
@@ -224,8 +220,8 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, unit):
             col=col,
             title_font=dict(size=20),
             tickfont=dict(size=24),
-            tickprefix=r"$",
-            ticksuffix=r"$",
+            # tickprefix="$",
+            # ticksuffix="$",
             exponentformat="e",
         )
         fig.update_yaxes(
@@ -233,8 +229,8 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, unit):
             col=col,
             title_font=dict(size=20),
             tickfont=dict(size=24),
-            tickprefix=r"$",
-            ticksuffix=r"$",
+            tickprefix="$",
+            ticksuffix="$",
             exponentformat="e",
         )
     fig.update_xaxes(row=1, col=1, title_text=r"$r/R_\odot$")
@@ -292,8 +288,8 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, unit):
                 showarrow=False,
                 xref="paper",
                 yref="paper",
-                x=0.55,
-                y=0.5,
+                x=0.65,
+                y=0.1,
                 bordercolor="black",
                 borderwidth=1,
             ),

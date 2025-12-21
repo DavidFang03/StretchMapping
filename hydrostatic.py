@@ -100,9 +100,9 @@ def hydrostatic_ode(r, vec, kwargs):
 
 
 def surface_event(r, vec, kwargs):
-    """Arrête l'intégration lorsque la densité tombe à une valeur plancher (ex: 1 kg/m3)"""
+    """Stop integration when P = 0"""
     mu, nu = vec
-    return mu - 1.0  # On cherche le zéro de (rho - 1)
+    return get_tillotson_pressure_sound(mu, kwargs["u_int"], kwargs)[0][0]
 
 
 def solve_hydrostatic(kwargs, unit):
@@ -118,13 +118,14 @@ def solve_hydrostatic(kwargs, unit):
     vec_initial = [mu_initial, nu_initial]
 
     rmin = 1e-4  # Avoid r=0
-    rmax = 100  # Should be large enough
+    rmax = 1e8  # Should be large enough
 
     length = unit.to("metre")
     time = unit.to("second")
     mass = unit.to("kilogram")
     unitG = length**3 / mass / time**2
-    G = 6.67e-11 / (unitG)
+    unitG = 1
+    G = 6.67e-11 / unitG
     print("G", G)
     kwargstoivp = kwargs.copy()
     kwargstoivp["G"] = G
@@ -166,17 +167,17 @@ def get_tillotson_pressure_sound(rho, u, p):
         u:   Internal energy (float or array)
         p:   Tillotson parameters {'rho0', 'a', 'b', 'A', 'B', 'E0', 'alpha', 'beta', 'u_iv', 'u_cv'}
     """
-    # 1. Préparation des données
+    # 1. Data structure
     rho = np.atleast_1d(rho)
     u = np.atleast_1d(u)
     n_points = len(rho)
     if len(u) == 1:
-        u = [u for _ in range(n_points)]
+        u = [u[0] for _ in range(n_points)]
 
     P_out = np.zeros(n_points)
     cs_out = np.zeros(n_points)
 
-    # Extraction des paramètres pour lisibilité
+    # 2. Parameters
     rho0 = p["rho0"]
     E0 = p["E0"]
     a, b = p["a"], p["b"]
@@ -186,7 +187,7 @@ def get_tillotson_pressure_sound(rho, u, p):
     u_cv = p.get("u_cv", 1e30)
     delta_u = u_cv - u_iv
 
-    # 2. Boucle sur chaque élément
+    # 3. Loop
     for i in range(n_points):
         r = rho[i]  # densité locale
         eng = u[i]  # énergie locale
@@ -387,7 +388,7 @@ if __name__ == "__main__":
         "u_int": 1e5,  # Energie interne initiale (J/kg) - "Froid" (Capa thermique ~ 4e2 -> C\deltaT ~1e5 < u_iv)
         "rho_center": 8000.0,  # On force une densité centrale > rho0 pour voir le profil
     }
-    kwargs_tillotson = adimension(kwargs_tillotson, codeearth)
+    # kwargs_tillotson = adimension(kwargs_tillotson, codeearth)
     print(kwargs_tillotson)
 
     print(f"Fe avec rho_center = {kwargs_tillotson['rho_center']} kg/m3...")
