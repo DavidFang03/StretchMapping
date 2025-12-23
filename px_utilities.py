@@ -7,8 +7,20 @@ import hydrostatic as hy
 
 style_target = "dash"
 density_color = "blue"
+energy_color = "orange"
 pressure_color = "green"
 soundspeed_color = "magenta"
+
+i = 0
+density_i = i
+i += 2
+energy_i = i
+i += 1
+soundspeed_i = i
+i += 2
+pressure_i = i
+i += 2
+scatter3d_i = i
 dotsize = 8
 
 # import plotly.io as pio
@@ -67,6 +79,7 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, unit):
     t = model.get_time()
     mpart = model.get_particle_mass()
     Pos = data["xyz"]
+    U_int = data["uint"]
 
     R = np.linalg.norm(Pos, axis=1)
     Np = Pos.shape[0]
@@ -85,13 +98,17 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, unit):
         rows=nrows,
         cols=ncols,
         specs=[
-            [{}, {"type": "scatter3d", "rowspan": 2}],
+            [{"secondary_y": True}, {"type": "scatter3d", "rowspan": 2}],
             [{"secondary_y": haspressure}, {}],
         ],
         horizontal_spacing=0.2,
         vertical_spacing=0.05,
         column_widths=[0.6, 0.4],
-        subplot_titles=("Density profile", "Soundspeed and Pressure profiles", ""),
+        subplot_titles=(
+            "Density and Energy profiles",
+            "Soundspeed and Pressure profiles",
+            "",
+        ),
     )
 
     rhotab = rhotarget[1]
@@ -108,6 +125,7 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, unit):
         ),
         row=1,
         col=1,
+        secondary_y=False,
     )
     fig.add_trace(
         go.Scatter(
@@ -119,34 +137,20 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, unit):
         ),
         row=1,
         col=1,
+        secondary_y=False,
     )
-
-    # ! 3D scatter
     fig.add_trace(
-        go.Scatter3d(
-            x=Pos[:, 0],
-            y=Pos[:, 1],
-            z=Pos[:, 2],
+        go.Scatter(
+            x=R,
+            y=U_int,
             mode="markers",
-            name="",
-            marker=dict(
-                color=Rho,
-                colorscale="Viridis",
-                colorbar=dict(
-                    title="Density",
-                    tickfont=dict(size=24),
-                    xanchor="left",
-                    exponentformat="e",
-                ),
-                cmin=0,
-                cmax=np.max(Rho),
-                opacity=0.3,
-                size=1,
-            ),
-            showlegend=False,
+            name="uint",
+            marker=dict(color=energy_color, size=dotsize),
+            opacity=0.6,
         ),
-        col=2,
         row=1,
+        col=1,
+        secondary_y=True,
     )
 
     P_cs_func = su.get_p_and_cs_func(eos, unit)
@@ -211,6 +215,34 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, unit):
             secondary_y=True,
         )
 
+    # ! 3D scatter
+    fig.add_trace(
+        go.Scatter3d(
+            x=Pos[:, 0],
+            y=Pos[:, 1],
+            z=Pos[:, 2],
+            mode="markers",
+            name="",
+            marker=dict(
+                color=Rho,
+                colorscale="Viridis",
+                colorbar=dict(
+                    title="Density",
+                    tickfont=dict(size=24),
+                    xanchor="left",
+                    exponentformat="e",
+                ),
+                cmin=0,
+                cmax=np.max(Rho),
+                opacity=0.3,
+                size=4,
+            ),
+            showlegend=False,
+        ),
+        col=2,
+        row=1,
+    )
+
     fig.update_xaxes(title_text=r"$r / R_\odot$", row=1, col=1)
 
     for pos in ([1, 1], [2, 1]):
@@ -219,29 +251,28 @@ def px_3d_and_rho(model, ctx, img_path, rhotarget, input_params, unit):
             row=row,
             col=col,
             title_font=dict(size=20),
-            tickfont=dict(size=24),
-            # tickprefix="$",
-            # ticksuffix="$",
-            exponentformat="e",
-        )
-        fig.update_yaxes(
-            row=row,
-            col=col,
-            title_font=dict(size=20),
-            tickfont=dict(size=24),
-            tickprefix="$",
-            ticksuffix="$",
+            tickfont=dict(size=16),
             exponentformat="e",
         )
     fig.update_xaxes(row=1, col=1, title_text=r"$r/R_\odot$")
+    fig.update_xaxes(row=2, col=1, title_text=r"$r/R_\odot$")
+
     fig.update_yaxes(
         row=1,
         col=1,
         title_text=r"$\rho$",
         title_font=dict(color=density_color),
         tickfont=dict(color=density_color),
+        secondary_y=False,
     )
-    fig.update_xaxes(row=2, col=1, title_text=r"$r/R_\odot$")
+    fig.update_yaxes(
+        row=1,
+        col=1,
+        title_text=r"$u$",
+        title_font=dict(color=energy_color),
+        tickfont=dict(color=energy_color),
+        secondary_y=True,
+    )
     fig.update_yaxes(
         row=2,
         col=1,
@@ -332,19 +363,49 @@ def update_px_3d_and_rho(fig, model, ctx, img_path, input_params):
     mpart = model.get_particle_mass()
 
     Pos = data["xyz"]
+    U_int = data["uint"]
     R = np.linalg.norm(Pos, axis=1)
     Rho = get_rho_values(data, mpart)
 
     Np = Pos.shape[0]
     mtot_target = input_params["mtot_target"]
 
-    fig.data[0].update(
+    fig.data[density_i].update(
         x=R,
         y=Rho,
     )
 
+    fig.data[energy_i].update(
+        x=R,
+        y=U_int,
+    )
+
+    cs_data = data["soundspeed"]
+    fig.data[soundspeed_i].update(
+        x=R,
+        y=cs_data,
+    )
+
+    fig.update_yaxes(range=[0, None], row=1, col=1, secondary_y=False)
+    fig.update_yaxes(range=[0, None], row=1, col=1, secondary_y=True)
+    fig.update_yaxes(range=[0, None], row=2, col=1, secondary_y=False)
+
+    if "pressure" in data:
+        pressure_data = data["pressure"]
+        print("pressure", pressure_data)
+        fig.data[pressure_i].update(
+            x=R,
+            y=pressure_data,
+        )
+        fig.update_yaxes(
+            range=[0, None],
+            row=2,
+            col=1,
+            secondary_y=True,
+        )
+
     # Trace 2 : Scatter3D
-    fig.data[2].update(
+    fig.data[scatter3d_i].update(
         x=Pos[:, 0],
         y=Pos[:, 1],
         z=Pos[:, 2],
@@ -355,36 +416,7 @@ def update_px_3d_and_rho(fig, model, ctx, img_path, input_params):
         # ),
     )
 
-    cs_data = data["soundspeed"]
-    fig.data[3].update(
-        x=R,
-        y=cs_data,
-    )
-
-    # fig.update_yaxes(range=[0, 1.1 * np.max(cs_data)], row=2, col=1, secondary_y=False)
-    fig.update_yaxes(range=[0, None], row=2, col=1, secondary_y=False)
-
-    if "pressure" in data:
-        pressure_data = data["pressure"]
-        fig.data[5].update(
-            x=R,
-            y=pressure_data,
-        )
-        fig.update_yaxes(
-            # range=[0, 1.1 * np.max(pressure_data)], row=2, col=1, secondary_y=True
-            range=[0, None],
-            row=2,
-            col=1,
-            secondary_y=True,
-        )
-
     fig.update_yaxes(range=[0, 1.1 * np.max(Rho)], row=1, col=1)
-    arr1inds = R.argsort()
-    sorted_R = R[arr1inds]
-    sorted_Rho = Rho[arr1inds]
-    est_mass = su.integrate_target(np.array([sorted_R, sorted_Rho]))
-    print(f"{est_mass}")
-
     fig.update_layout(
         title_text=f"{img_path} t={t:.2e}",
         annotations=[

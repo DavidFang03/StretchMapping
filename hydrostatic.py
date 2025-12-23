@@ -102,7 +102,8 @@ def hydrostatic_ode(r, vec, kwargs):
 def surface_event(r, vec, kwargs):
     """Stop integration when P = 0"""
     mu, nu = vec
-    return get_tillotson_pressure_sound(mu, kwargs["u_int"], kwargs)[0][0]
+    pressure = get_tillotson_pressure_sound(mu, kwargs["u_int"], kwargs)[0][-1]
+    return pressure
 
 
 def solve_hydrostatic(kwargs, unit):
@@ -124,7 +125,6 @@ def solve_hydrostatic(kwargs, unit):
     time = unit.to("second")
     mass = unit.to("kilogram")
     unitG = length**3 / mass / time**2
-    unitG = 1
     G = 6.67e-11 / unitG
     print("G", G)
     kwargstoivp = kwargs.copy()
@@ -151,6 +151,12 @@ def solve_hydrostatic(kwargs, unit):
     num_points = 200
     R_discrete = np.linspace(sol.t[0], R_surface, num_points)
     Rho_discrete = sol.sol(R_discrete)[0, :]
+
+    mask_unphysical = (
+        get_tillotson_pressure_sound(Rho_discrete, kwargs["u_int"], kwargs)[0] <= 0
+    )
+
+    Rho_discrete[mask_unphysical] = 1e-6
 
     return R_discrete, Rho_discrete
 
@@ -385,10 +391,10 @@ if __name__ == "__main__":
         "beta": 5.0,
         "u_iv": 0.024e8,
         "u_cv": 0.0867e8,
-        "u_int": 1e5,  # Energie interne initiale (J/kg) - "Froid" (Capa thermique ~ 4e2 -> C\deltaT ~1e5 < u_iv)
+        "u_int": 0,  # Energie interne initiale (J/kg) - "Froid" (Capa thermique ~ 4e2 -> C\deltaT ~1e5 < u_iv)
         "rho_center": 8000.0,  # On force une densité centrale > rho0 pour voir le profil
     }
-    # kwargs_tillotson = adimension(kwargs_tillotson, codeearth)
+    kwargs_tillotson = adimension(kwargs_tillotson, codeearth)
     print(kwargs_tillotson)
 
     print(f"Fe avec rho_center = {kwargs_tillotson['rho_center']} kg/m3...")
@@ -401,18 +407,37 @@ if __name__ == "__main__":
     eos = {"name": "tillotson", "id": f"tillotson", "values": kwargs_tillotson}
     import stretchmap_utilities as su
 
-    P_cs_func = su.get_p_and_cs_func(eos, codeearth)
+    # P_cs_func = su.get_p_and_cs_func(eos, codeearth)
     mask = tabrho != 0
-    P, cs = P_cs_func(tabrho[mask])
+    # P, cs = P_cs_func(tabrho[mask])
+    print("coucou")
+
+    use_shamrock = True
+    if use_shamrock:
+        import shamrock
+        import test_tillotson as tt
+
+        kw_to_sham = tt.recover_tillotson_values(kwargs_tillotson)
+        print(kw_to_sham)
+        P, cs = [], []
+        for rho in tabrho[mask]:
+
+            p, _cs = shamrock.phys.eos.eos_Tillotson(
+                rho=rho, u=kwargs_tillotson["u_int"], **kw_to_sham
+            )
+            P.append(p)
+            cs.append(_cs)
 
     print(f"Rayon final : {Rmax:.2f}")
     print(f"Masse totale : {M_total:.2e}")
 
     fig, axs = plt.subplots(3, figsize=(8, 6))
     fig.subplots_adjust(hspace=0.5)
-    axs[0].plot(tabx, tabrho, label="Density (Granite)", color="blue", linewidth=2)
-    axs[1].plot(tabx, cs, color="magenta")
-    axs[2].plot(tabx, P, color="green")
+    axs[0].plot(
+        tabx, tabrho, label="Density (Granite)", color="blue", linewidth=2, marker="+"
+    )
+    axs[1].plot(tabx, cs, marker="+", color="magenta")
+    axs[2].plot(tabx, P, marker="+", color="green")
 
     for ax in axs:
         ax.set_xlabel("Radius")
@@ -425,4 +450,5 @@ if __name__ == "__main__":
     ax.grid(True, linestyle="--", alpha=0.7)
     ax.legend()
 
+    fig.savefig("tillotson.png")
     plt.show()

@@ -10,7 +10,7 @@ import px_utilities
 import ffmpeg
 
 shamrock.enable_experimental_features()
-do_px = True
+do_px = False
 
 
 def handle_dump(dump_prefix, overwrite=False):
@@ -118,7 +118,7 @@ def setupModel(model, codeu, dr, xmax, mtot_target, rhotarget, eos, SG, eps_plum
     cfg.set_artif_viscosity_VaryingCD10(
         alpha_min=0.0, alpha_max=1, sigma_decay=0.1, alpha_u=1, beta_AV=2
     )
-    cfg.set_particle_tracking(True)  # ! important ?
+    # cfg.set_particle_tracking(True)  # ! important ?
 
     if SG == "mm":
         cfg.set_self_gravity_mm(
@@ -184,7 +184,7 @@ def recover_tillotson_values(values):
     values_to_shamrock = {}
     for key, value in values.items():
         if key in ["rho0", "E0", "A", "B", "a", "b", "alpha", "beta", "u_iv", "u_cv"]:
-            values_to_shamrock[key] = value
+            values_to_shamrock[key] = float(value)
     return values_to_shamrock
 
 
@@ -285,8 +285,8 @@ def setup_Fermi(y0, mu_e):
     return tabx, tabrho, mtot_target
 
 
-def setup_Tillotson(till_values):
-    tabx, tabrho = hy.solve_hydrostatic(till_values, codeu)
+def setup_Tillotson(till_values, unit):
+    tabx, tabrho = hy.solve_hydrostatic(till_values, unit)
 
     arr1inds = tabx.argsort()
     tabx = tabx[arr1inds]
@@ -307,10 +307,10 @@ if __name__ == "__main__":
     # durationrestart = 1 #  + 1 fois la simu initiale
     # durationrestart = 0
     SG = "mm"
-    nb_dumps = 200
-    tf_cl = 2  # durée de la run en temps de chute libre (environ)
+    nb_dumps = 1000
+    tf_cl = 10  # durée de la run en temps de chute libre (environ)
 
-    N_target = 2e3
+    N_target = 2e5
 
     eos = "tillotson"
     # For Fe [Tillotson 1962]
@@ -325,7 +325,7 @@ if __name__ == "__main__":
         "beta": 5.0,
         "u_iv": 0.024e8,
         "u_cv": 0.0867e8,
-        "u_int": 1e5,  # Energie interne initiale (J/kg) - "Froid" (Capa thermique ~ 4e2 -> C\deltaT ~1e5 < u_iv)
+        "u_int": 0.0,  # Energie interne initiale (J/kg) - "Froid" (Capa thermique ~ 4e2 -> C\deltaT ~1e5 < u_iv)
         "rho_center": 8000.0,  # On force une densité centrale > rho0 pour voir le profil
     }
     kwargs_tillotson = hy.adimension(kwargs_tillotson, codeu)
@@ -336,7 +336,7 @@ if __name__ == "__main__":
 
     if eos == "tillotson":
         eos = {"name": "tillotson", "id": f"tillotson", "values": kwargs_tillotson}
-        tabx, tabrho, mtot_target = setup_Tillotson(kwargs_tillotson)
+        tabx, tabrho, mtot_target = setup_Tillotson(kwargs_tillotson, codeu)
         rhoprofiletxt = "solve_ivp(RK45)"
 
     xmax = np.max(tabx)
