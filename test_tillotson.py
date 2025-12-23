@@ -137,7 +137,7 @@ def setupModel(model, codeu, dr, xmax, mtot_target, rhotarget, eos, SG, eps_plum
         cfg.set_eos_polytropic(eos["values"]["K"], eos["values"]["gamma"])
     elif eos["name"] == "tillotson":
         # print(recover_tillotson_values(eos["values"]))
-        cfg.set_eos_tillotson(**recover_tillotson_values(eos["values"]))
+        cfg.set_eos_tillotson(**hy.recover_tillotson_values(eos["values"]))
 
     cfg.set_units(codeu)
     model.set_solver_config(cfg)
@@ -178,14 +178,6 @@ def setupModel(model, codeu, dr, xmax, mtot_target, rhotarget, eos, SG, eps_plum
     model.set_cfl_cour(C_cour)
     model.set_cfl_force(C_force)
     return model, ctx
-
-
-def recover_tillotson_values(values):
-    values_to_shamrock = {}
-    for key, value in values.items():
-        if key in ["rho0", "E0", "A", "B", "a", "b", "alpha", "beta", "u_iv", "u_cv"]:
-            values_to_shamrock[key] = float(value)
-    return values_to_shamrock
 
 
 def dump(model, dump_path):

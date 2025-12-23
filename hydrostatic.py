@@ -7,6 +7,13 @@ import stretchmap_utilities as su
 G = 6.67430e-11
 
 
+def recover_tillotson_values(values):
+    values_to_shamrock = {}
+    for key in ["rho0", "E0", "A", "B", "a", "b", "alpha", "beta", "u_iv", "u_cv"]:
+        values_to_shamrock[key] = float(values[key])
+    return values_to_shamrock
+
+
 def get_tillotson_derivatives(rho, kwargs):
     """
     Return P, dP/drho (p_prime) et d2P/drho2 (p_second) according to Tillotson in condensed state.
