@@ -240,73 +240,74 @@ def get_p_and_cs_func(eos, unit):
 
 
 if __name__ == "__main__":
-    # ###########################################
-    y0 = 5
-    mu_e = 2
-    # ###########################################
+    def stretch_fermi():
+        # ###########################################
+        y0 = 5
+        mu_e = 2
+        # ###########################################
 
-    import matplotlib.pyplot as plt
+        import matplotlib.pyplot as plt
 
-    R, RHO = solve_Chandrasekhar(y0, mu_e)  # SI
+        R, RHO = solve_Chandrasekhar(y0, mu_e)  # SI
 
-    pfermi_rho = P_fermi(RHO[:-1], mu_e) / pressure
-    cs_rho = cs_fermi(RHO[:-1], mu_e) / velocity
-    R = R[:-1] / Rsol
-    RHO = RHO[:-1] / density
+        pfermi_rho = P_fermi(RHO[:-1], mu_e) / pressure
+        cs_rho = cs_fermi(RHO[:-1], mu_e) / velocity
+        R = R[:-1] / Rsol
+        RHO = RHO[:-1] / density
 
-    fig, axs = plt.subplots(3)
-    axs[0].plot(R, RHO)
-    axs[1].plot(R, pfermi_rho)
-    axs[2].plot(R, cs_rho)
+        fig, axs = plt.subplots(3)
+        axs[0].plot(R, RHO)
+        axs[1].plot(R, pfermi_rho)
+        axs[2].plot(R, cs_rho)
 
-    axs[0].set_title("Density")
-    axs[1].set_title("Pressure")
-    axs[2].set_title("Soundspeed")
-    axs[0].set_ylabel(r"$\rho$")
-    axs[1].set_ylabel(r"$P$")
-    axs[2].set_ylabel(r"$c_s$")
+        axs[0].set_title("Density")
+        axs[1].set_title("Pressure")
+        axs[2].set_title("Soundspeed")
+        axs[0].set_ylabel(r"$\rho$")
+        axs[1].set_ylabel(r"$P$")
+        axs[2].set_ylabel(r"$c_s$")
 
-    for ax in axs:
-        ax.set_xlabel(r"$r/R_{\odot}$")
-    fig.subplots_adjust(hspace=0.6, left=0.3, right=0.7)
-    plt.show()
+        for ax in axs:
+            ax.set_xlabel(r"$r/R_{\odot}$")
+        fig.subplots_adjust(hspace=0.6, left=0.3, right=0.7)
+        plt.show()
 
-    import pandas as pd
+        import pandas as pd
 
-    df = pd.DataFrame(
-        {"r": R, "rho_target": RHO, "P_target": pfermi_rho, "cs_target": cs_rho}
-    )
-    df.to_csv(f"rhotarget_y0-{y0}_mue-{mu_e}.csv", index=False)
+        df = pd.DataFrame(
+            {"r": R, "rho_target": RHO, "P_target": pfermi_rho, "cs_target": cs_rho}
+        )
+        df.to_csv(f"rhotarget_y0-{y0}_mue-{mu_e}.csv", index=False)
 
-    print(Msol, Rsol, Tsol)
-    print(pressure, density, velocity)
-    c = 2.99792458
-    h = 6.62607015
-    me = 9.1093837
-    mp = 1.67262192
-    G = 6.67430
+        print(Msol, Rsol, Tsol)
+        print(pressure, density, velocity)
+        c = 2.99792458
+        h = 6.62607015
+        me = 9.1093837
+        mp = 1.67262192
+        G = 6.67430
 
-    c_exp = 8
-    h_exp = -34
-    me_exp = -31
-    mp_exp = -27
-    G_exp = -11
+        c_exp = 8
+        h_exp = -34
+        me_exp = -31
+        mp_exp = -27
+        G_exp = -11
 
-    ALPHA = (3 / (8 * np.pi)) ** (1.0 / 3) * h / (mp ** (1.0 / 3.0) * me * c)
-    _3ALPHA_exp = 3 * h_exp - mp_exp - 3 * me_exp - 3 * c_exp
+        ALPHA = (3 / (8 * np.pi)) ** (1.0 / 3) * h / (mp ** (1.0 / 3.0) * me * c)
+        _3ALPHA_exp = 3 * h_exp - mp_exp - 3 * me_exp - 3 * c_exp
 
-    print(f"ALPHA = {ALPHA} *e{_3ALPHA_exp}/3 ")
+        print(f"ALPHA = {ALPHA} *e{_3ALPHA_exp}/3 ")
 
-    BETA = (np.pi / 3) * me**4 * c**5 / h**3
-    BETA_exp = me_exp * 4 + c_exp * 5 - h_exp * 3
+        BETA = (np.pi / 3) * me**4 * c**5 / h**3
+        BETA_exp = me_exp * 4 + c_exp * 5 - h_exp * 3
 
-    print(f"BETA = {BETA} *e{BETA_exp} ")
+        print(f"BETA = {BETA} *e{BETA_exp} ")
 
-    C1 = (me * c / h) ** 3 * mp * (8 * np.pi / 3)  # a mutiplier par mu_e
-    C1_exp = (me_exp + c_exp - h_exp) * 3 + mp_exp
+        C1 = (me * c / h) ** 3 * mp * (8 * np.pi / 3)  # a mutiplier par mu_e
+        C1_exp = (me_exp + c_exp - h_exp) * 3 + mp_exp
 
-    print(f"C1 = {C1} *e{C1_exp} ")
+        print(f"C1 = {C1} *e{C1_exp} ")
 
-    RA = (1 / C1) * np.sqrt(2 * BETA / (np.pi * G))
-    _2RA_exp = -2 * C1_exp + (BETA_exp - G_exp)
-    print(f"RA = {RA} *e{_2RA_exp}/2 ")  # a diviser par (y_0*mu_e)
+        RA = (1 / C1) * np.sqrt(2 * BETA / (np.pi * G))
+        _2RA_exp = -2 * C1_exp + (BETA_exp - G_exp)
+        print(f"RA = {RA} *e{_2RA_exp}/2 ")  # a diviser par (y_0*mu_e)

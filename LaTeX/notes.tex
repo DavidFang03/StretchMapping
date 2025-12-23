@@ -4,7 +4,7 @@
 \author{D. Fang}
 \date{\today}
 
-\usepackage{amsmath}
+\usepackage{amsmath, amssymb}
 \usepackage{derivative}
 \usepackage{tikz}
 \usepackage{hyperref}
@@ -479,11 +479,15 @@ Finalement,
 \end{align*}
 
 Il reste les conditions aux limites.
-On choisit en premier le rayon de notre boule $R_{\max}$. 
+Si on connaît déjà le rayon final alors simplement :
 \begin{align*}
   \rho(R_{\max}) &= 0
 \end{align*}
-
+Sinon on impose une densité arbitraire au centre
+\begin{align*}
+  \rho(0) &= \rho_a
+\end{align*}
+et le rayon est alors déterminé par l'annulation de $\rho$.
 
 \subsubsection{Application à Tillotson}
 On part d'une sphère condensée
@@ -494,5 +498,13 @@ On part d'une sphère condensée
   \rho_0 \pdv[order=2]{p}{\rho} &= \left[\frac{2\frac{u}{E_0 \eta^3} bu}{\left(1+\frac{u}{E_0\eta^2}\right)^2}\right]  + b\frac{u^2}{E_0}\frac{2}{\eta^2} \left[\frac{4\frac{u}{E_0 \eta^3}}{\left(1+\frac{u}{E_0\eta^2}\right)^3}\right] - \frac{u^2}{E_0}\frac{4}{\eta^3} \left[\frac{b}{\left(1+\frac{u}{E_0\eta^2}\right)^2}\right]+ \frac{2B}{\rho_0}  \\
   & =  \frac{8b\frac{u^3}{E_0^2 \eta^5}}{\left(1+\frac{u}{E_0\eta^2}\right)^3} -  \frac{2b \frac{u^2}{E_0\eta^3}}{\left(1+\frac{u}{E_0\eta^2}\right)^2}+ \frac{2B}{\rho_0}
 \end{align*}
+
+\subsubsection*{Problèmes}
+
+\begin{enumerate}
+  \item Tillotson ne permet pas de récupérer la température donc j'impose temperature uniforme ($u=0$ partout)
+  \item En dessous d'une certaine densité ($\rho \lesssim  0.95\rho_0$) la pression devient négative. Domaine non pris en compte par Tillotson ? Correspond à une situation non physique donc j'impose $P=0$ et le rayon de la sphère est le rayon où $P$ s'annule.
+  \item Problème qui suit : la densité n'est pas encore nulle au moment la pression s'annule. Il vaudrait mieux qu'il y ait une discontinuité de densité donc j'étends un peu au dela du rayon initial et j'y fixe $\rho=10^{-6}$.
+\end{enumerate}
 
 \end{document}

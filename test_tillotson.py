@@ -9,7 +9,7 @@ import hydrostatic as hy
 import px_utilities
 import ffmpeg
 
-shamrock.enable_experimental_features()
+# shamrock.enable_experimental_features()
 do_px = False
 
 

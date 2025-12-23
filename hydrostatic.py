@@ -450,5 +450,12 @@ if __name__ == "__main__":
     ax.grid(True, linestyle="--", alpha=0.7)
     ax.legend()
 
-    fig.savefig("tillotson.png")
+    import pandas as pd
+
+    df = pd.DataFrame({"r": tabx, "rho_target": tabrho, "P_target": P, "cs_target": cs})
+    df.to_csv(
+        f"rhotarget_tillotson_rhocenter_{kwargs_tillotson["rho_center"]:.0e}.csv",
+        index=False,
+    )
+
     plt.show()
