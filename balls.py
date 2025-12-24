@@ -53,8 +53,21 @@ Tillotson_parameters_Fe = {
     "B": 1.05e11,  # Pa (Non-linear modulus B)
     "alpha": 5.0,
     "beta": 5.0,
-    "u_iv": 0.024e8,
+    "u_iv": 0.024e8,  # TODO check this
     "u_cv": 0.0867e8,
+}
+
+Tillotson_parameters_Granite = {
+    "rho0": 2700,  # kg/m^3
+    "E0": 0.095e8,  # J/kg (Spécifique energy of sublimation approx)
+    "a": 0.5,
+    "b": 1.3,
+    "A": 1.8e10,  # Pa (Bulk modulus A)
+    "B": 1.8e10,  # Pa (Non-linear modulus B)
+    "alpha": 5.0,
+    "beta": 5.0,
+    "u_iv": 3.5e6,
+    "u_cv": 1.8e7,
 }
 
 

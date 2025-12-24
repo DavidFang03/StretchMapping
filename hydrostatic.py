@@ -442,82 +442,145 @@ if __name__ == "__main__":
     codeearth = Unitsystem()
     # Paramètres pour le Granite (Source: Melosh 1989 / Benz code)
     # Unités SI converties depuis CGS si nécessaire
-    kwargs_tillotson = {
-        "rho0": 7.8e3,  # kg/m^3
-        "E0": 0.095e8,  # J/kg (Spécifique energy of sublimation approx)
-        "a": 0.5,
-        "b": 1.5,
-        "A": 1.279e11,  # Pa (Bulk modulus A)
-        "B": 1.05e11,  # Pa (Non-linear modulus B)
-        "alpha": 5.0,
-        "beta": 5.0,
-        "u_iv": 0.024e8,
-        "u_cv": 0.0867e8,
-        "u_int": 0,  # Energie interne initiale (J/kg) - "Froid" (Capa thermique ~ 4e2 -> C\deltaT ~1e5 < u_iv)
-        "rho_center": 8000.0,  # On force une densité centrale > rho0 pour voir le profil
-    }
-    kwargs_tillotson = adimension(kwargs_tillotson, codeearth)
-    print(kwargs_tillotson)
+    # kwargs_tillotson = {
+    #     "rho0": 7.8e3,  # kg/m^3
+    #     "E0": 0.095e8,  # J/kg (Spécifique energy of sublimation approx)
+    #     "a": 0.5,
+    #     "b": 1.5,
+    #     "A": 1.279e11,  # Pa (Bulk modulus A)
+    #     "B": 1.05e11,  # Pa (Non-linear modulus B)
+    #     "alpha": 5.0,
+    #     "beta": 5.0,
+    #     "u_iv": 0.024e8,
+    #     "u_cv": 0.0867e8,
+    # }
+    #
+    material = "Granite"
+    if material == "Granite":
+        from balls import Tillotson_parameters_Granite
 
-    print(f"Fe avec rho_center = {kwargs_tillotson['rho_center']} kg/m3...")
+        kwargs_tillotson = Tillotson_parameters_Granite
 
-    tabx, tabrho = solve_hydrostatic(kwargs_tillotson, codeearth)
+    # kwargs_tillotson = adimension(kwargs_tillotson, codeearth)
+    # print(kwargs_tillotson)
 
-    M_total = su.integrate_target([tabx, tabrho])
-    Rmax = tabx[-1]
+    # print(f"Fe avec rho_center = {kwargs_tillotson['rho_center']} kg/m3...")
 
-    eos = {"name": "tillotson", "id": f"tillotson", "values": kwargs_tillotson}
-    import stretchmap_utilities as su
+    # tabx, tabrho = solve_hydrostatic(kwargs_tillotson, codeearth)
 
-    # P_cs_func = su.get_p_and_cs_func(eos, codeearth)
-    mask = tabrho != 0
-    # P, cs = P_cs_func(tabrho[mask])
-    print("coucou")
+    # M_total = su.integrate_target([tabx, tabrho])
+    # Rmax = tabx[-1]
 
-    use_shamrock = True
-    if use_shamrock:
-        import shamrock
-        import test_tillotson as tt
+    # eos = {"name": "tillotson", "id": f"tillotson", "values": kwargs_tillotson}
+    # import stretchmap_utilities as su
 
-        kw_to_sham = tt.recover_tillotson_values(kwargs_tillotson)
-        print(kw_to_sham)
-        P, cs = [], []
-        for rho in tabrho[mask]:
+    # # P_cs_func = su.get_p_and_cs_func(eos, codeearth)
+    # mask = tabrho != 0
+    # # P, cs = P_cs_func(tabrho[mask])
+    # print("coucou")
 
-            p, _cs = shamrock.phys.eos.eos_Tillotson(
-                rho=rho, u=kwargs_tillotson["u_int"], **kw_to_sham
+    # use_shamrock = True
+    # if use_shamrock:
+    #     import shamrock
+    #     import test_tillotson as tt
+
+    #     kw_to_sham = tt.recover_tillotson_values(kwargs_tillotson)
+    #     print(kw_to_sham)
+    #     P, cs = [], []
+    #     for rho in tabrho[mask]:
+
+    #         p, _cs = shamrock.phys.eos.eos_Tillotson(
+    #             rho=rho, u=kwargs_tillotson["u_int"], **kw_to_sham
+    #         )
+    #         P.append(p)
+    #         cs.append(_cs)
+
+    # print(f"Rayon final : {Rmax:.2f}")
+    # print(f"Masse totale : {M_total:.2e}")
+
+    # fig, axs = plt.subplots(3, figsize=(8, 6))
+    # fig.subplots_adjust(hspace=0.5)
+    # axs[0].plot(
+    #     tabx, tabrho, label="Density (Granite)", color="blue", linewidth=2, marker="+"
+    # )
+    # axs[1].plot(tabx, cs, marker="+", color="magenta")
+    # axs[2].plot(tabx, P, marker="+", color="green")
+
+    # for ax in axs:
+    #     ax.set_xlabel("Radius")
+    # axs[0].set_ylabel("Density")
+    # axs[1].set_ylabel("Soundspeed")
+    # axs[2].set_ylabel("Pressure")
+    # axs[0].set_title(
+    #     f"Density profile (condensed Tillotson)\nR_final={Rmax:.1f}, M={M_total:.2e}"
+    # )
+    # ax.grid(True, linestyle="--", alpha=0.7)
+    # ax.legend()
+
+    # import pandas as pd
+
+    # df = pd.DataFrame({"r": tabx, "rho_target": tabrho, "P_target": P, "cs_target": cs})
+    # df.to_csv(
+    #     f"rhotarget_tillotson_rhocenter_{kwargs_tillotson["rho_center"]:.0e}.csv",
+    #     index=False,
+    # )
+
+    import unitsystem
+
+    siunit = unitsystem.Unitsystem("SI")
+    rho0 = kwargs_tillotson["rho0"]
+    figmass, axmass = plt.subplot_mosaic(
+        [["m", "profile"], ["r", "profile"]], figsize=(12, 8)
+    )
+    figmass.suptitle(material)
+    figmass.subplots_adjust(hspace=0.5)
+    rhocenter_array = np.linspace(1.1 * rho0, 7 * rho0)
+    mtot_array = []
+    rmax_array = []
+    for i, rhocenter in enumerate(rhocenter_array):
+        tabx, tabrho = solve_hydrostatic_tillotson(
+            kwargs_tillotson, rhocenter, u_int=0, unit=siunit
+        )
+        mtot = su.integrate_target([tabx, tabrho])
+        rmax = np.max(tabx[tabrho > 10])
+        mtot_array.append(mtot)
+        rmax_array.append(rmax)
+
+        if i % 3 == 0:
+            line = axmass["profile"].plot(tabx, tabrho, label=f"{rhocenter/rho0:.1f}")[
+                0
+            ]
+            axmass["profile"].axvline(
+                x=rmax, ls="--", alpha=0.4, color=line.get_color()
             )
-            P.append(p)
-            cs.append(_cs)
 
-    print(f"Rayon final : {Rmax:.2f}")
-    print(f"Masse totale : {M_total:.2e}")
-
-    fig, axs = plt.subplots(3, figsize=(8, 6))
-    fig.subplots_adjust(hspace=0.5)
-    axs[0].plot(
-        tabx, tabrho, label="Density (Granite)", color="blue", linewidth=2, marker="+"
+    axmass["profile"].set_ylabel(r"$\rho$")
+    axmass["profile"].set_title(
+        r"Density profile for different $\rho_{\rm center}/\rho_0$"
     )
-    axs[1].plot(tabx, cs, marker="+", color="magenta")
-    axs[2].plot(tabx, P, marker="+", color="green")
-
-    for ax in axs:
-        ax.set_xlabel("Radius")
-    axs[0].set_ylabel("Density")
-    axs[1].set_ylabel("Soundspeed")
-    axs[2].set_ylabel("Pressure")
-    axs[0].set_title(
-        f"Density profile (condensed Tillotson)\nR_final={Rmax:.1f}, M={M_total:.2e}"
+    axmass["m"].plot(rhocenter_array / rho0, mtot_array)
+    axmass["m"].axhline(
+        y=siunit.Mearth, color="blue", ls="--", alpha=0.5, label="Earth"
     )
-    ax.grid(True, linestyle="--", alpha=0.7)
-    ax.legend()
+    axmass["m"].axhline(y=siunit.Mmoon, color="black", ls="--", alpha=0.5, label="Moon")
+    axmass["m"].set_ylabel(r"$M_{\rm tot}$")
+    axmass["m"].set_title(r"Total mass evolution with $\rho_{\rm center}/\rho_0$")
 
-    import pandas as pd
-
-    df = pd.DataFrame({"r": tabx, "rho_target": tabrho, "P_target": P, "cs_target": cs})
-    df.to_csv(
-        f"rhotarget_tillotson_rhocenter_{kwargs_tillotson["rho_center"]:.0e}.csv",
-        index=False,
+    axmass["r"].plot(rhocenter_array / rho0, rmax_array)
+    axmass["r"].axhline(
+        y=siunit.Rearth, color="blue", ls="--", alpha=0.5, label="Earth"
     )
+    axmass["r"].axhline(y=siunit.Rmoon, color="black", ls="--", alpha=0.5, label="Moon")
+    axmass["r"].set_ylabel(r"$R_{\rm max}$")
+    axmass["r"].set_title(r"Planet radius evolution with $\rho_{\rm center}/\rho_0$")
+
+    for label, ax in axmass.items():
+        if label != "profile":
+            ax.set_xlabel(r"$\rho_{\rm center}/\rho_0$")
+        else:
+            ax.set_xlabel(r"$r$")
+        ax.legend()
 
     plt.show()
+
+# ./shamrock --sycl-cfg 0:0 --loglevel 1 --rscript ./hydrostatic.py

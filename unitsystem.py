@@ -17,15 +17,24 @@ class Unitsystem:
 
         import numpy as np
 
-        Rearth = 6371e3
-        Mearth = 5.972e24
-        Tearth = np.sqrt(Rearth**3 / (Mearth * 6.67e-11))
+        self.Rearth = 6371e3
+        self.Mearth = 5.972e24
+        self.Tearth = np.sqrt(self.Rearth**3 / (self.Mearth * 6.67e-11))
+
+        self.Rmoon = 1737e3
+        self.Mmoon = 7.347e22
+        self.Tmoon = np.sqrt(self.Rmoon**3 / (self.Mmoon * 6.67e-11))
 
         if unit_name == "earth":
-            self.length = Rearth
-            self.time = Tearth
-            self.mass = Mearth
-        pass
+            self.length = self.Rearth
+            self.time = self.Tearth
+            self.mass = self.Mearth
+        elif unit_name == "SI":
+            self.length = 1
+            self.time = 1
+            self.mass = 1
+        else:
+            raise NotImplementedError()
 
     def to(self, name):
         if name == "metre":
