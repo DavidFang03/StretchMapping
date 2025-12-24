@@ -7,13 +7,6 @@ import stretchmap_utilities as su
 G = 6.67430e-11
 
 
-def recover_tillotson_values(values):
-    values_to_shamrock = {}
-    for key in ["rho0", "E0", "A", "B", "a", "b", "alpha", "beta", "u_iv", "u_cv"]:
-        values_to_shamrock[key] = float(values[key])
-    return values_to_shamrock
-
-
 def get_tillotson_derivatives(rho, kwargs):
     """
     Return P, dP/drho (p_prime) et d2P/drho2 (p_second) according to Tillotson in condensed state.
@@ -114,7 +107,9 @@ def surface_event(r, vec, kwargs):
 
 
 def solve_hydrostatic(kwargs, unit):
-    """Résout l'équilibre hydrostatique"""
+    """
+    DEPRECATED
+    Résout l'équilibre hydrostatique"""
 
     surface_event.terminal = True
     surface_event.direction = -1
@@ -161,6 +156,66 @@ def solve_hydrostatic(kwargs, unit):
 
     mask_unphysical = (
         get_tillotson_pressure_sound(Rho_discrete, kwargs["u_int"], kwargs)[0] <= 0
+    )
+
+    Rho_discrete[mask_unphysical] = 1e-6
+
+    return R_discrete, Rho_discrete
+
+
+def solve_hydrostatic_tillotson(tillotson_params, rho_center, u_int, unit):
+    """
+    Returns tabx, tabrho by solving Tillotson+Hydrostatic equilibrium
+
+    Input: everything must be in the same unit. Unit still has to be precised beaucause of G.
+    """
+
+    surface_event.terminal = True
+    surface_event.direction = -1
+
+    # Arbitrary density at the center
+    mu_initial = rho_center
+    nu_initial = 0.0
+
+    vec_initial = [mu_initial, nu_initial]
+
+    rmin = 1e-4  # Avoid r=0
+    rmax = 1e8  # Should be large enough
+
+    length = unit.to("metre")
+    time = unit.to("second")
+    mass = unit.to("kilogram")
+    unitG = length**3 / mass / time**2
+    G = 6.67e-11 / unitG
+    print("G", G)
+    kwargstoivp = tillotson_params.copy()
+    kwargstoivp["G"] = G
+    kwargstoivp["u_int"] = u_int
+
+    sol = solve_ivp(
+        hydrostatic_ode,
+        [rmin, rmax],
+        vec_initial,
+        args=(kwargstoivp,),
+        events=surface_event,
+        dense_output=True,
+        rtol=1e-8,  # TODO what is that Tolérance fine pour la précision
+        atol=1e-8,  # TODO what is that
+        method="RK45",
+    )
+
+    if sol.t_events[0].size > 0:
+        R_surface = sol.t_events[0][0]
+    else:
+        R_surface = sol.t[-1]
+        print("Rmax has not been reached !!!")
+
+    num_points = 200
+    R_discrete = np.linspace(sol.t[0], R_surface, num_points)
+    Rho_discrete = sol.sol(R_discrete)[0, :]
+
+    mask_unphysical = (
+        get_tillotson_pressure_sound(Rho_discrete, u_int, tillotson_params)[0] <= 0
     )
 
     Rho_discrete[mask_unphysical] = 1e-6

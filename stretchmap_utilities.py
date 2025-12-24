@@ -35,7 +35,7 @@ def integrate_target(target, dim=3):
 
     # guard : formes attendues
     if r.ndim != 1 or rho.ndim != 1 or r.shape[0] != rho.shape[0]:
-        raise ValueError("target must contains arrays of same lenght")
+        raise ValueError("target must contains arrays of same length")
 
     integrand = rho * dS(r, dim)
     return np.trapezoid(integrand, r)
@@ -240,6 +240,7 @@ def get_p_and_cs_func(eos, unit):
 
 
 if __name__ == "__main__":
+
     def stretch_fermi():
         # ###########################################
         y0 = 5

@@ -9,7 +9,7 @@ import hydrostatic as hy
 import px_utilities
 import ffmpeg
 
-# shamrock.enable_experimental_features()
+shamrock.enable_experimental_features()
 do_px = False
 
 
@@ -113,6 +113,13 @@ def initModel():
     return model, ctx, codeu
 
 
+def recover_tillotson_values(values):
+    values_to_shamrock = {}
+    for key in ["rho0", "E0", "A", "B", "a", "b", "alpha", "beta", "u_iv", "u_cv"]:
+        values_to_shamrock[key] = float(values[key])
+    return values_to_shamrock
+
+
 def setupModel(model, codeu, dr, xmax, mtot_target, rhotarget, eos, SG, eps_plummer):
     cfg = model.gen_default_config()
     cfg.set_artif_viscosity_VaryingCD10(
@@ -137,7 +144,7 @@ def setupModel(model, codeu, dr, xmax, mtot_target, rhotarget, eos, SG, eps_plum
         cfg.set_eos_polytropic(eos["values"]["K"], eos["values"]["gamma"])
     elif eos["name"] == "tillotson":
         # print(recover_tillotson_values(eos["values"]))
-        cfg.set_eos_tillotson(**hy.recover_tillotson_values(eos["values"]))
+        cfg.set_eos_tillotson(**recover_tillotson_values(eos["values"]))
 
     cfg.set_units(codeu)
     model.set_solver_config(cfg)
@@ -302,7 +309,7 @@ if __name__ == "__main__":
     nb_dumps = 1000
     tf_cl = 10  # durée de la run en temps de chute libre (environ)
 
-    N_target = 2e5
+    N_target = 2e2
 
     eos = "tillotson"
     # For Fe [Tillotson 1962]
