@@ -5,6 +5,13 @@ import hydrostatic as hy
 import unitsystem
 import matplotlib.pyplot as plt
 
+# import vtkmodules.vtkRenderingFreeType
+# import vtkmodules.vtkRenderingMatplotlib
+import pyvista as pv
+import gc
+
+pv.set_plot_theme("dark")
+
 import shamrock
 
 shamrock.enable_experimental_features()
@@ -16,12 +23,26 @@ colors = {
     "pressure": "green",
     "soundspeed": "magenta",
 }
+fmts = {
+    "density": "blue--",
+    "energy": "orange--",
+    "pressure": "g--",
+    "soundspeed": "m--",
+}
+
 ids = {
     "density": "rho",
     "energy": "uint",
     "pressure": "pressure",
     "soundspeed": "soundspeed",
 }
+symbols = {
+    "density": r"$\rho$",
+    "energy": r"$u$",
+    "pressure": r"$p$",
+    "soundspeed": r"$c_s$",
+}
+
 
 Tillotson_parameters_Fe = {
     "rho0": 7.8e3,  # kg/m^3
@@ -99,7 +120,7 @@ class EoS:
 
 
 class Tillotson_Ball:
-    def __init__(self, center, v_xyz, N_target, rho_center, u_int, eos):
+    def __init__(self, center, v_xyz, N_target, rho_center, u_int, eos, rescale=1.0):
         """
         Can be created before setup
 
@@ -111,9 +132,10 @@ class Tillotson_Ball:
         :param u_int:       in SI
         :param unit: Unit instance
         """
-        self.center = center
+        self.center = np.array(center)
         self.v_xyz = v_xyz
         self.N_target = int(N_target)
+        self.rescale = rescale
 
         rho_center = rho_center / unitsystem.density(eos.unit)
         u_int = u_int / unitsystem.energy(eos.unit)
@@ -239,9 +261,11 @@ class Setup:
 
         # -------------------------------------------------------------------------------
         # resize simulation box ---------------------------------------------------------
-        sbmin = (-1, -1, -1)
-        sbmax = (1, 1, 1)
+        sbmin = (-3, -3, -3)
+        sbmax = (3, 3, 3)
         self.model.resize_simulation_box(sbmin, sbmax)
+        # TODO Probably will have to add a kill sphere
+
         # _______________________________________________________________________________
 
         self.add_balls()
@@ -290,7 +314,7 @@ class Setup:
                 box_max=ball.bmax,
                 tabx=ball.data["r"],
                 tabrho=ball.data["density"],
-                mtot=ball.mtot_target,
+                mtot=ball.mtot_target * ball.rescale,
             )
 
             setup.apply_setup(stretched_hcp)
@@ -358,60 +382,70 @@ class Setup:
         self.model.dump(dump_path)
         print(f"Dumped {dump_path}")
 
-    def firstplot(self):
-        self.fig, axs = plt.subplots(2)
-        self.axes = {
-            "density": axs[0],
-            "energy": axs[0].twinx(),
-            "soundspeed": axs[1],
-            "pressure": axs[1].twinx(),
-        }
+    def first_pvplot(self):
+        dic_sham = self.ctx.collect_data()
+        dic_sham["r"] = np.linalg.norm(dic_sham["xyz"], axis=1)
+        dic_sham["rho"] = (
+            self.model.get_particle_mass()
+            * (self.model.get_hfact() / dic_sham["hpart"]) ** 3
+        )
+        col_weights = [1, 1]
+        self.plotter = pv.Plotter(
+            shape="4|1",
+            splitting_position=0.5,
+            window_size=(1080, 1080),
+            off_screen=True,
+        )
         self.graphs = {
             "density": None,
             "energy": None,
             "soundspeed": None,
             "pressure": None,
         }
-        data = self.ctx.collect_data()
-        data["r"] = np.linalg.norm(data["xyz"], axis=1)
-        data["rho"] = (
-            self.model.get_particle_mass()
-            * (self.model.get_hfact() / data["hpart"]) ** 3
-        )
-        if len(data["r"]) >= 1e4:
-            self.markevery = len(data["r"]) // 1e4
-        else:
-            self.markevery = 1
 
-        for quantity in ["density", "energy", "soundspeed", "pressure"]:
-            self.axes[quantity].plot(
+        for i, quantity in enumerate(["density", "energy", "soundspeed", "pressure"]):
+            id = ids[quantity]
+            pv_color = pv.Color(colors[quantity], opacity=0.5)
+            self.plotter.subplot(i)
+            chart = pv.Chart2D()
+            self.graphs[quantity] = chart.scatter(
+                dic_sham["r"], dic_sham[id], color=pv_color, size=5
+            )
+            chart.plot(
                 self.balls[0].data["r"],
                 self.balls[0].data[quantity],
-                label="target",
-                ls=style_target,
-                color=colors[quantity],
+                fmt=fmts[quantity],
             )
-            self.graphs[quantity] = self.axes[quantity].plot(
-                data["r"],
-                data[ids[quantity]],
-                marker="o",
-                markersize=3,
-                ls="",
-                label="data",
-                markevery=self.markevery,
-                color=colors[quantity],
-            )[0]
+            self.plotter.add_chart(chart)
+            if i < 3:
+                chart.x_axis.toggle()
+                chart.x_axis.ticks_visible = False
+                chart.x_axis.tick_labels_visible = False
+                chart.x_label = ""
+            else:
+                chart.x_label = r"$r$"
+            chart.title = quantity
+            chart.y_label = id
 
-        print("energy" in self.axes)
-        self.axes["density"].set_ylabel("$\\rho$")
-        self.axes["energy"].set_ylabel("$u$")
-        self.axes["soundspeed"].set_ylabel("$c_s$")
-        self.axes["pressure"].set_ylabel("$p$")
-        for ax in self.axes.values():
-            ax.legend()
-            ax.set_xlabel("$r$")
+        self.plotter.subplot(i + 1)
+        point_cloud = pv.PolyData(dic_sham["xyz"])
+        point_cloud[r"$\\rho$"] = dic_sham["rho"]
+        self.mesh_actor = self.plotter.add_mesh(
+            point_cloud,
+            cmap="magma_r",
+            render_points_as_spheres=True,
+            point_size=5.0,
+        )
+        self.plotter.show_grid()
+        self.plotter.add_text(
+            "t = {:.1e} dt = {:.1e}".format(self.model.get_time(), self.model.get_dt()),
+            position="upper_edge",
+            name="timetext",
+        )
 
-    def update_plot(self):
+        #     mesh_actor.mapper.SetInputData(new_cloud) pour update
+
+    def update_pvplot(self):
         data = self.ctx.collect_data()
         data["r"] = np.linalg.norm(data["xyz"], axis=1)
         data["rho"] = (
@@ -419,9 +453,22 @@ class Setup:
             * (self.model.get_hfact() / data["hpart"]) ** 3
         )
         for quantity in ["density", "energy", "soundspeed", "pressure"]:
-            self.graphs[quantity].set_ydata(data[ids[quantity]])
+            self.graphs[quantity].update(data["r"], data[ids[quantity]])
 
-    def ready_set_go(self, rescale=False):
+        new_cloud = pv.PolyData(data["xyz"])
+        new_cloud[r"$\\rho$"] = data["rho"]
+        self.mesh_actor.mapper.SetInputData(new_cloud)
+        print(self.model.get_time())
+        self.plotter.remove_actor("timetext")
+        self.plotter.add_text(
+            "t = {:.1e} dt = {:.1e}".format(self.model.get_time(), self.model.get_dt()),
+            position="upper_edge",
+            name="timetext",
+        )
+        gc.collect()
+        self.plotter.render()
+
+    def ready_set_go(self):
         """
         Roadmap:
             - First dump #//(and first plot?)
@@ -441,8 +488,9 @@ class Setup:
         dump_path = f"{newpath_withoutext}.sham"
         img_path = f"{newpath_withoutext}.png"
         self.dump(dump_path)
-        self.firstplot()
-        self.fig.savefig(img_path)
+        self.first_pvplot()
+        self.plotter.screenshot(img_path, scale=2)
+
         self.ready_toloop = True
         print("Dump success: ready to smash balls")
 
@@ -459,8 +507,8 @@ class Setup:
             dump_path = f"{newpath_withoutext}.sham"
             img_path = f"{newpath_withoutext}.png"
             self.dump(dump_path=dump_path)  # **BEFORE** plotting
-            self.update_plot()
-            self.fig.savefig(img_path)
+            self.update_pvplot()
+            self.plotter.screenshot(img_path, scale=2)
 
     def write_json_params(self):
         import json
@@ -497,28 +545,44 @@ if __name__ == "__main__":
 
     rho_center = 1.5 * Tillotson_parameters_Fe["rho0"]
     eos = EoS(id="tillotson", details={"material": "Fe"}, unit=code_unit)
+    balls = []
     ball1 = Tillotson_Ball(
-        center=[0, 0, 0],
-        v_xyz=[1, 0, 0],
-        N_target=2e3,
+        center=[-1, 0, 0],
+        v_xyz=[0.5, 0, 0],
+        N_target=1e3,
         rho_center=rho_center,
         u_int=0,
         eos=eos,
+        rescale=1.05,
     )
+
+    balls.append(ball1)
+
+    ball2 = Tillotson_Ball(
+        center=[1, 0, 0],
+        v_xyz=[-0.5, 0, 0],
+        N_target=1e3,
+        rho_center=2 * rho_center,
+        u_int=0,
+        eos=eos,
+        rescale=1.05,
+    )
+
+    balls.append(ball2)
 
     #!####################################
 
-    nb_dumps = 5
-    tf_cl = 10  # durée de la run en temps de chute libre (environ)
+    nb_dumps = 100
+    tf_cl = 3  # durée de la run en temps de chute libre (environ)
     #! #####################################
     setup = Setup(
-        SG="mm", eos=eos, balls=[ball1], nb_dumps=nb_dumps, tf=tf_cl, overwrite=True
+        SG="mm", eos=eos, balls=balls, nb_dumps=nb_dumps, tf=tf_cl, overwrite=True
     )
 
     tcl = setup.get_free_fall_time()
     tf = tf_cl * tcl
     t_stops = np.linspace(0, tf, nb_dumps)
-    setup.ready_set_go(rescale=False)
+    setup.ready_set_go()
     print(t_stops)
     setup.loop(t_stops)
 
