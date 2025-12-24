@@ -11,6 +11,12 @@ def energy(unit):
     return m / l**2 / s**2
 
 
+def speed(unit):
+    s = unit.to("second")
+    l = unit.to("metre")
+    return l / s
+
+
 class Unitsystem:
 
     def __init__(self, unit_name="earth"):
@@ -43,3 +49,9 @@ class Unitsystem:
             return self.time
         elif name == "kilogram":
             return self.mass
+
+
+if __name__ == "__main__":
+    u = Unitsystem("earth")
+    print(u.Rearth / u.Tearth)
+    print(speed(u))

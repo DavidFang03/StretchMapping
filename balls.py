@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import pyvista as pv
 import gc
 
-pv.set_plot_theme("dark")
+# pv.set_plot_theme("dark")
 
 import shamrock
 
@@ -58,8 +58,8 @@ Tillotson_parameters_Fe = {
 }
 
 Tillotson_parameters_Granite = {
-    "rho0": 2700,  # kg/m^3
-    "E0": 0.095e8,  # J/kg (Spécifique energy of sublimation approx)
+    "rho0": 2.7e3,  # kg/m^3
+    "E0": 1.6e7,  # J/kg (Spécifique energy of sublimation approx)
     "a": 0.5,
     "b": 1.3,
     "A": 1.8e10,  # Pa (Bulk modulus A)
@@ -91,11 +91,14 @@ class EoS:
             raise NotImplementedError()
 
     def setup_Tillotson_EoS(self):
-        self.material = self.details.get("material", "Fe")
+        self.material = self.details.get("material", "Granite")
 
         match self.material:
             case "Fe":
                 params = Tillotson_parameters_Fe
+            case "Granite":
+                params = Tillotson_parameters_Granite
+        self.originalparams = params.copy()
         self.params = hy.adimension(params, self.unit)
 
     def solve_hydrostatic(self, values):
@@ -131,6 +134,11 @@ class EoS:
         if self.id == "tillotson":
             eos_json["material"] = self.material
 
+    def ask(self, key):
+        if key not in self.originalparams:
+            raise Exception()
+        return self.originalparams[key]
+
 
 class Tillotson_Ball:
     def __init__(self, center, v_xyz, N_target, rho_center, u_int, eos, rescale=1.0):
@@ -146,7 +154,7 @@ class Tillotson_Ball:
         :param unit: Unit instance
         """
         self.center = np.array(center)
-        self.v_xyz = v_xyz
+        self.v_xyz = (v_xyz[0], v_xyz[1], v_xyz[2])
         self.N_target = int(N_target)
         self.rescale = rescale
 
@@ -184,6 +192,8 @@ class Tillotson_Ball:
             self.data["density"], self.data["energy"]
         )
 
+        # self.show_profile()  # DEBUG
+
     def show_profile(self):
         import matplotlib.pyplot as plt
 
@@ -192,6 +202,7 @@ class Tillotson_Ball:
         ax.set_xlabel("$r$")
         ax.set_ylabel("$\\rho$")
         plt.show()
+        exit()
 
 
 class Setup:
@@ -264,6 +275,13 @@ class Setup:
             raise NotImplementedError()
         # _______________________________________________________________________________
 
+        bsize = 3
+        sbmin = (-bsize, -bsize, -bsize)
+        sbmax = (bsize, bsize, bsize)
+        self.cfg.add_kill_sphere(
+            center=(0, 0, 0), radius=bsize
+        )  # kill particles outside the simulation box
+
         # -------------------------------------------------------------------------------
         # units  ------------------------------------------------------------------------
         self.cfg.set_units(self.unit)
@@ -274,8 +292,7 @@ class Setup:
 
         # -------------------------------------------------------------------------------
         # resize simulation box ---------------------------------------------------------
-        sbmin = (-3, -3, -3)
-        sbmax = (3, 3, 3)
+
         self.model.resize_simulation_box(sbmin, sbmax)
         # TODO Probably will have to add a kill sphere
 
@@ -330,7 +347,13 @@ class Setup:
                 mtot=ball.mtot_target * ball.rescale,
             )
 
-            setup.apply_setup(stretched_hcp)
+            offset_hcp = setup.make_modifier_offset(
+                parent=stretched_hcp,
+                offset_position=(0, 0, 0),
+                offset_velocity=ball.v_xyz,
+            )
+
+            setup.apply_setup(offset_hcp)
 
     def gen_dump_prefix(self):
         balls_nb = len(self.balls)
@@ -471,7 +494,6 @@ class Setup:
         new_cloud = pv.PolyData(data["xyz"])
         new_cloud[r"$\\rho$"] = data["rho"]
         self.mesh_actor.mapper.SetInputData(new_cloud)
-        print(self.model.get_time())
         self.plotter.remove_actor("timetext")
         self.plotter.add_text(
             "t = {:.1e} dt = {:.1e}".format(self.model.get_time(), self.model.get_dt()),
@@ -543,6 +565,23 @@ class Setup:
         with open(json_path, "w") as fp:
             json.dump(jsonparams, fp, indent=4)
 
+    def movie(self):
+        import ffmpeg
+
+        fps = self.nb_dumps / 3
+        pattern_png = f"{self.folder_path}/*.png"
+        filemp4 = f"{self.folder_path}/{self.dump_prefix}.mp4"
+        ffmpeg.input(pattern_png, pattern_type="glob", framerate=fps).output(
+            filemp4,
+            vcodec="libx264",
+            crf=18,
+            preset="medium",
+            r=fps,
+            pix_fmt="yuv420p",
+            movflags="faststart",
+        ).overwrite_output().run()
+        print(f"movie: {filemp4}")
+
 
 # ! Simulation parameters
 if __name__ == "__main__":
@@ -556,37 +595,37 @@ if __name__ == "__main__":
         unit_time=np.sqrt(sicte.earth_radius() ** 3.0 / sicte.G() / sicte.earth_mass()),
     )
 
-    rho_center = 1.5 * Tillotson_parameters_Fe["rho0"]
-    eos = EoS(id="tillotson", details={"material": "Fe"}, unit=code_unit)
+    eos = EoS(id="tillotson", details={"material": "Granite"}, unit=code_unit)
+    rho0 = eos.ask("rho0")
     balls = []
-    ball1 = Tillotson_Ball(
+    proto_earth = Tillotson_Ball(
         center=[-1, 0, 0],
         v_xyz=[0.5, 0, 0],
-        N_target=1e3,
-        rho_center=rho_center,
-        u_int=0,
+        N_target=2e4,
+        rho_center=5.0 * rho0,
+        u_int=0.0,
         eos=eos,
         rescale=1.05,
     )
 
-    balls.append(ball1)
+    balls.append(proto_earth)
 
-    ball2 = Tillotson_Ball(
+    theia = Tillotson_Ball(
         center=[1, 0, 0],
         v_xyz=[-0.5, 0, 0],
-        N_target=1e3,
-        rho_center=2 * rho_center,
-        u_int=0,
+        N_target=2e3,
+        rho_center=1.5 * rho0,
+        u_int=0.0,
         eos=eos,
         rescale=1.05,
     )
 
-    balls.append(ball2)
+    balls.append(theia)
 
     #!####################################
 
     nb_dumps = 100
-    tf_cl = 3  # durée de la run en temps de chute libre (environ)
+    tf_cl = 1  # durée de la run en temps de chute libre (environ)
     #! #####################################
     setup = Setup(
         SG="mm", eos=eos, balls=balls, nb_dumps=nb_dumps, tf=tf_cl, overwrite=True
@@ -598,5 +637,6 @@ if __name__ == "__main__":
     setup.ready_set_go()
     print(t_stops)
     setup.loop(t_stops)
+    setup.movie()
 
 # ./shamrock --sycl-cfg 0:0 --loglevel 1 --rscript ./balls.py
