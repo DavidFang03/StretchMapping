@@ -507,6 +507,33 @@ On part d'une sphère condensée
   \item Problème qui suit : la densité n'est pas encore nulle au moment la pression s'annule. Il vaudrait mieux qu'il y ait une discontinuité de densité donc j'étends un peu au dela du rayon initial et j'y fixe $\rho=10^{-6}$.
 \end{enumerate}
 
+\subsubsection{Énergie interne}
+On ne peut juste fixer l'énergie interne à $0$ puisqu'il n'y a pas que la contribution de la température mais aussi liée à la pression.
+
+\begin{align*}
+  \odif{u} = -p\odif{V} + c_p\odif{T} = \odif{u_C} + \odif{u_T}
+\end{align*}
+où $\odif{u_C}$ est l'énergie dûe à la pression ``froide''.
+\begin{align*}
+  \odif{u_C} = -p_C\odif{V} = p_C \frac{\odif{\rho}}{\rho^2}
+\end{align*}
+On intègre numériquement donc, avec un RK4 par exemple.
+\begin{align*}
+  \odv{u_C}{\rho} &= p_C(\rho, u_C) \frac{1}{\rho^2} \\
+  u_C(\rho_0) &= 0
+\end{align*}
+Je comprends pas pourquoi c'est $p_C(\rho, u_C)$ et pas $p_C(\rho, u)$ mais j'imagine qu'on résout ça à l'état initial isotherme donc $u = u_c$ à une constante additive près.
+
+C'est cool mais on a toujours pas l'énergie (i.e la température).
+
+De toute manière on a la relation
+\[
+  T = T_0 + \frac{u-u_C }{c_V}
+\]
+Donc $u$ et $T$ sont équivalents.
+Ma théorie c'est qu'il faut initialiser avec une sphère isotherme condensée et y appliquer l'intégration numérique de l'énergie froide.
+Ensuite on touche plus à rien et l'énergie interne évolue simplement avec l'équation d'énergie SPH. À la limite on peut ajouter dans l'eos l'évolution de de la température mais c'est tout.
+
 \section{Formation de la Lune}
 \begin{table}[h]
   \centering
