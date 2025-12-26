@@ -175,21 +175,8 @@ def P_of_rho(kwargs):
 
 
 if __name__ == "__main__":
-    kwargs_tillotson = {
-        "rho0": 7.8e3,  # kg/m^3
-        "E0": 0.095e8,  # J/kg (Spécifique energy of sublimation approx)
-        "a": 0.5,
-        "b": 1.5,
-        "A": 1.279e11,  # Pa (Bulk modulus A)
-        "B": 1.05e11,  # Pa (Non-linear modulus B)
-        "alpha": 5.0,
-        "beta": 5.0,
-        "u_iv": 0.024e8,
-        "u_cv": 0.0867e8,
-        "u_int": 1e5,  # Energie interne initiale (J/kg) - "Froid" (Capa thermique ~ 4e2 -> C\deltaT ~1e5 < u_iv)
-        "rho_center": 8000.0,  # On force une densité centrale > rho0 pour voir le profil
-    }
+    from balls import Tillotson_parameters_Granite
 
-    fig = phase_diagram(kwargs_tillotson)
-    fig_Prho = P_of_rho(kwargs_tillotson)
+    fig = phase_diagram(Tillotson_parameters_Granite)
+    fig_Prho = P_of_rho(Tillotson_parameters_Granite)
     plt.show()

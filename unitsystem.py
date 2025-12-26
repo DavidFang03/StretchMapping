@@ -54,4 +54,7 @@ class Unitsystem:
 if __name__ == "__main__":
     u = Unitsystem("earth")
     print(u.Rearth / u.Tearth)
+    print(u.Mearth / u.Rearth**3)
+    print("energy", u.Mearth * u.Rearth**2 / u.Tearth**2)
+    print("specific energy", u.Rearth**2 / u.Tearth**2)
     print(speed(u))

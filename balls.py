@@ -10,24 +10,48 @@ import matplotlib.pyplot as plt
 import pyvista as pv
 import gc
 
-# pv.set_plot_theme("dark")
+from rich.console import Console
+
+console = Console()
+
+color_text = "black"
+
+pv.set_plot_theme("dark")
+color_text = "white"
+pv.global_theme.font.color = color_text
 
 import shamrock
 
 shamrock.enable_experimental_features()
 
 style_target = "dashed"
+# colors = {
+# "density": "blue",
+# "energy": "orange",
+# "pressure": "green",
+# "soundspeed": "magenta",
+# "cold_energy": "red",
+# }
 colors = {
-    "density": "blue",
-    "energy": "orange",
-    "pressure": "green",
-    "soundspeed": "magenta",
+    "density": "#1e90ff",
+    "energy": "#ff7f50",
+    "pressure": "#7bed9f",
+    "soundspeed": "#5352ed",
+    "cold_energy": "#eccc68",
 }
+# fmts = {
+#     "density": "blue--",
+#     "energy": "orange--",
+#     "pressure": "g--",
+#     "soundspeed": "m--",
+#     "cold_energy": "r--",
+# }
 fmts = {
-    "density": "blue--",
-    "energy": "orange--",
-    "pressure": "g--",
-    "soundspeed": "m--",
+    "density": f"{colors['density']}--",
+    "energy": f"{colors['energy']}--",
+    "pressure": f"{colors['pressure']}--",
+    "soundspeed": f"{colors['soundspeed']}--",
+    "cold_energy": f"{colors['cold_energy']}--",
 }
 
 ids = {
@@ -35,12 +59,14 @@ ids = {
     "energy": "uint",
     "pressure": "pressure",
     "soundspeed": "soundspeed",
+    "cold_energy": "u_c",
 }
 symbols = {
     "density": r"$\rho$",
     "energy": r"$u$",
     "pressure": r"$p$",
     "soundspeed": r"$c_s$",
+    "cold_energy": r"$u_c$",
 }
 
 
@@ -69,6 +95,153 @@ Tillotson_parameters_Granite = {
     "u_iv": 3.5e6,
     "u_cv": 1.8e7,
 }
+
+
+class ShamPlot:
+    def __init__(self, model, ctx, balls=[]):
+        self.ctx = ctx
+        self.model = model
+        self.balls = balls
+
+        self.subplot_nbs = {
+            "density": 0,
+            "energy": 1,
+            "soundspeed": 2,
+            "pressure": 3,
+            "cold_energy": 4,
+            "mesh": 5,
+        }
+
+        self.graphs = {
+            "density": None,
+            "energy": None,
+            "soundspeed": None,
+            "pressure": None,
+            "cold_energy": None,
+        }
+
+        self.charts = {
+            "density": None,
+            "energy": None,
+            "soundspeed": None,
+            "pressure": None,
+            "cold_energy": None,
+        }
+
+        self.first_pvplot()
+
+    def first_pvplot(self):
+        self.update_data()
+        self.plotter = pv.Plotter(
+            shape="5|1",
+            splitting_position=0.4375,
+            window_size=(960, 540),
+            off_screen=True,
+        )
+
+        for i, quantity in enumerate(
+            ["density", "energy", "soundspeed", "pressure", "cold_energy"]
+        ):
+            id = ids[quantity]
+            pv_color = pv.Color(colors[quantity], opacity=0.5)
+            self.plotter.subplot(i)
+            chart = pv.Chart2D()
+            self.graphs[quantity] = chart.scatter(
+                self.data_sham["r"], self.data_sham[id], color=pv_color, size=5
+            )
+            if len(self.balls) > 0:
+                chart.plot(
+                    self.balls[0].data["r"],
+                    self.balls[0].data[quantity],
+                    fmt=fmts[quantity],
+                )
+            self.plotter.add_chart(chart)
+            if i < 4:
+                chart.x_axis.toggle()
+                chart.x_axis.ticks_visible = False
+                chart.x_axis.tick_labels_visible = False
+                chart.x_label = ""
+            else:
+                chart.x_label = r"$r$"
+            chart.title = quantity
+            chart.y_label = id
+
+            chart.background_color = "#2f3542"
+            chart.border_color = "#57606f"
+
+            self.charts[quantity] = chart
+
+        self.plotter.subplot(i + 1)
+        point_cloud = pv.PolyData(self.data_sham["xyz"])
+        point_cloud[r"\rho"] = self.data_sham["rho"]
+        self.mesh_actor = self.plotter.add_mesh(
+            point_cloud,
+            cmap="cool",
+            render_points_as_spheres=True,
+            point_size=5.0,
+        )
+        self.plotter.show_bounds(
+            bounds=[-3, 3, -3, 3, -3, 3],
+            grid="back",
+            location="outer",
+            ticks="both",
+            n_xlabels=2,
+            n_ylabels=2,
+            n_zlabels=2,
+        )
+        self.plotter.camera.position = (-10, 10, 10)
+        self.update_time()
+
+    def update_data(self):
+        data_sham = self.ctx.collect_data()
+        data_sham["r"] = np.linalg.norm(data_sham["xyz"], axis=1)
+        data_sham["rho"] = (
+            self.model.get_particle_mass()
+            * (self.model.get_hfact() / data_sham["hpart"]) ** 3
+        )
+        data_sham["u_c"] = hy.get_tillotson_cold_energy_granite(data_sham["rho"])
+
+        self.data_sham = data_sham
+
+    def update_time(self):
+        self.plotter.subplot(self.subplot_nbs["mesh"])
+        if "timetext" in self.plotter.actors:
+            self.plotter.remove_actor("timetext")
+        self.plotter.add_text(
+            "t = {:.1e} dt = {:.1e}".format(self.model.get_time(), self.model.get_dt()),
+            position="upper_edge",
+            name="timetext",
+        )
+
+    def update_pvplot(self):
+        self.update_data()
+
+        gc.collect()
+        # self.chart.clear()
+        for i, quantity in enumerate(
+            ["density", "energy", "soundspeed", "pressure", "cold_energy"]
+        ):
+            self.plotter.subplot(i)
+            chart = self.charts[quantity]
+            id = ids[quantity]
+            chart.clear()
+            pv_color = pv.Color(colors[quantity], opacity=0.5)
+            self.graphs[quantity] = chart.scatter(
+                self.data_sham["r"], self.data_sham[id], color=pv_color, size=5
+            )
+            # self.graphs[quantity].update(data["r"], data[ids[quantity]])
+            # self.charts[quantity].toggle()
+
+        self.plotter.subplot(i + 1)
+        new_cloud = pv.PolyData(self.data_sham["xyz"])
+        new_cloud[r"$\\rho$"] = self.data_sham["rho"]
+        self.mesh_actor.mapper.SetInputData(new_cloud)
+
+        self.plotter.render()
+        # self.plotter.update()
+
+    def screenshot(self, img_path):
+        self.plotter.screenshot(img_path, scale=2)
 
 
 class EoS:
@@ -125,6 +298,7 @@ class EoS:
                     formated_dict[key] = f"{value:.1e}"
                 else:
                     formated_dict[key] = value
+            return formated_dict
 
         eos_json = {
             "id": self.id,
@@ -133,6 +307,8 @@ class EoS:
         }
         if self.id == "tillotson":
             eos_json["material"] = self.material
+
+        return eos_json
 
     def ask(self, key):
         if key not in self.originalparams:
@@ -167,6 +343,7 @@ class Tillotson_Ball:
             "energy": None,
             "pressure": None,
             "soundspeed": None,
+            "cold_energy": None,
         }
         (
             self.data["r"],
@@ -192,6 +369,10 @@ class Tillotson_Ball:
             self.data["density"], self.data["energy"]
         )
 
+        self.data["cold_energy"] = hy.get_tillotson_cold_energy_granite(
+            self.data["density"]
+        )
+
         # self.show_profile()  # DEBUG
 
     def show_profile(self):
@@ -206,7 +387,7 @@ class Tillotson_Ball:
 
 
 class Setup:
-    def __init__(self, SG, eos, balls, nb_dumps, tf, overwrite):
+    def __init__(self, SG, eos, balls, nb_dumps, tf, clear):
         self.SG = SG
         self.eos = eos
         self.balls = balls
@@ -216,9 +397,26 @@ class Setup:
         self.nb_dumps = nb_dumps
         self.tf = tf
 
-        self.init_model(overwrite=overwrite)
+        if not shamrock.sys.is_initialized():
+            shamrock.change_loglevel(1)
+            shamrock.sys.init("0:0")
 
-    def init_model(self, overwrite):
+        self.ctx = shamrock.Context()
+        self.ctx.pdata_layout_new()
+        self.model = shamrock.get_Model_SPH(
+            context=self.ctx, vector_type="f64_3", sph_kernel="M4"
+        )
+        self.cfg = self.model.gen_default_config()
+
+        self.eps_plummer = self.get_eps_plummer()
+
+        self.dump_prefix = self.gen_dump_prefix()
+        self.folder_path = shu.handle_dump(dump_prefix=self.dump_prefix, clear=clear)
+        self.write_json_params()
+
+        self.init_model()
+
+    def init_model(self):
         """
         Roadmap:
             - initialize, ctx, model (kernel), cfg (solver config)
@@ -232,17 +430,6 @@ class Setup:
             - set particle mass
             - stretchmap
         """
-        if not shamrock.sys.is_initialized():
-            shamrock.change_loglevel(1)
-            shamrock.sys.init("0:0")
-
-        self.ctx = shamrock.Context()
-        self.ctx.pdata_layout_new()
-        self.model = shamrock.get_Model_SPH(
-            context=self.ctx, vector_type="f64_3", sph_kernel="M4"
-        )
-        self.cfg = self.model.gen_default_config()
-
         # -------------------------------------------------------------------------------
         # artificial viscocity  ----------------------------------------------------------
         self.cfg.set_artif_viscosity_VaryingCD10(
@@ -262,7 +449,6 @@ class Setup:
             )  #! self-gravity
         else:
             raise NotImplementedError()
-        self.eps_plummer = self.get_eps_plummer()
         self.cfg.set_softening_plummer(epsilon=self.eps_plummer)
 
         # // if self.eos.id == "fermi":
@@ -275,7 +461,7 @@ class Setup:
             raise NotImplementedError()
         # _______________________________________________________________________________
 
-        bsize = 3
+        bsize = 10
         sbmin = (-bsize, -bsize, -bsize)
         sbmax = (bsize, bsize, bsize)
         self.cfg.add_kill_sphere(
@@ -307,9 +493,6 @@ class Setup:
         self.model.set_cfl_cour(C_cour)
         self.model.set_cfl_force(C_force)
         # _______________________________________________________________________________
-
-        self.dump_prefix = self.gen_dump_prefix()
-        self.folder_path = self.handle_dump(overwrite=overwrite)
 
     def get_eps_plummer(self):
         eps_plummer = np.inf
@@ -361,42 +544,8 @@ class Setup:
         dump_prefix += f"{self.eos.id}_"
         dump_prefix += f"{int(self.balls[0].N_target/1000)}k_"
         dump_prefix += f"{self.SG}_"
-        dump_prefix += "cd10_"
+        dump_prefix += "cd10_uc_skewv2_"
         return dump_prefix
-
-    def handle_dump(self, overwrite):
-        import os
-        import glob
-
-        try:
-            os.mkdir("outputs")
-        except OSError as error:
-            print("ok outputs exist")
-
-        last_eventual_folder_path = shu.get_last_folder(self.dump_prefix)
-        if overwrite and os.path.isdir(last_eventual_folder_path):
-            folder_path = shu.get_last_folder(self.dump_prefix)
-            user_agree = input(
-                f"Will remove the entire {folder_path} folder ({len(glob.glob(f"{folder_path}/*.sham"))} dumps) (y/n)"
-            )
-            if user_agree == "y":
-
-                for f in glob.glob(f"{folder_path}/*"):
-                    os.remove(f)
-        else:
-            folder_path = shu.get_new_folder(self.dump_prefix)
-            try:
-                os.mkdir(folder_path)
-            except OSError as error:
-                print(
-                    f"{folder_path} Directory already exists, no need to mkdir a new one."
-                )
-
-        command = f"cp {os.path.abspath(__file__)} {folder_path}/{self.dump_prefix}.py"
-        print("executing", command)
-        os.system(command)
-        print("Ok let's go with", folder_path)
-        return folder_path
 
     def get_free_fall_time(self):
         """
@@ -416,92 +565,9 @@ class Setup:
 
     def dump(self, dump_path):  # TODO directly to .vtk ?
         self.model.dump(dump_path)
-        print(f"Dumped {dump_path}")
-
-    def first_pvplot(self):
-        dic_sham = self.ctx.collect_data()
-        dic_sham["r"] = np.linalg.norm(dic_sham["xyz"], axis=1)
-        dic_sham["rho"] = (
-            self.model.get_particle_mass()
-            * (self.model.get_hfact() / dic_sham["hpart"]) ** 3
-        )
-        col_weights = [1, 1]
-        self.plotter = pv.Plotter(
-            shape="4|1",
-            splitting_position=0.5,
-            window_size=(1080, 1080),
-            off_screen=True,
-        )
-        self.graphs = {
-            "density": None,
-            "energy": None,
-            "soundspeed": None,
-            "pressure": None,
-        }
-
-        for i, quantity in enumerate(["density", "energy", "soundspeed", "pressure"]):
-            id = ids[quantity]
-            pv_color = pv.Color(colors[quantity], opacity=0.5)
-            self.plotter.subplot(i)
-            chart = pv.Chart2D()
-            self.graphs[quantity] = chart.scatter(
-                dic_sham["r"], dic_sham[id], color=pv_color, size=5
-            )
-            chart.plot(
-                self.balls[0].data["r"],
-                self.balls[0].data[quantity],
-                fmt=fmts[quantity],
-            )
-            self.plotter.add_chart(chart)
-            if i < 3:
-                chart.x_axis.toggle()
-                chart.x_axis.ticks_visible = False
-                chart.x_axis.tick_labels_visible = False
-                chart.x_label = ""
-            else:
-                chart.x_label = r"$r$"
-            chart.title = quantity
-            chart.y_label = id
-
-        self.plotter.subplot(i + 1)
-        point_cloud = pv.PolyData(dic_sham["xyz"])
-        point_cloud[r"$\\rho$"] = dic_sham["rho"]
-        self.mesh_actor = self.plotter.add_mesh(
-            point_cloud,
-            cmap="magma_r",
-            render_points_as_spheres=True,
-            point_size=5.0,
-        )
-        self.plotter.show_grid()
-        self.plotter.add_text(
-            "t = {:.1e} dt = {:.1e}".format(self.model.get_time(), self.model.get_dt()),
-            position="upper_edge",
-            name="timetext",
-        )
+        console.print(f"Dumped {dump_path}")
 
         #     mesh_actor.mapper.SetInputData(new_cloud) pour update
-
-    def update_pvplot(self):
-        data = self.ctx.collect_data()
-        data["r"] = np.linalg.norm(data["xyz"], axis=1)
-        data["rho"] = (
-            self.model.get_particle_mass()
-            * (self.model.get_hfact() / data["hpart"]) ** 3
-        )
-        for quantity in ["density", "energy", "soundspeed", "pressure"]:
-            self.graphs[quantity].update(data["r"], data[ids[quantity]])
-
-        new_cloud = pv.PolyData(data["xyz"])
-        new_cloud[r"$\\rho$"] = data["rho"]
-        self.mesh_actor.mapper.SetInputData(new_cloud)
-        self.plotter.remove_actor("timetext")
-        self.plotter.add_text(
-            "t = {:.1e} dt = {:.1e}".format(self.model.get_time(), self.model.get_dt()),
-            position="upper_edge",
-            name="timetext",
-        )
-        gc.collect()
-        self.plotter.render()
 
     def ready_set_go(self):
         """
@@ -510,10 +576,13 @@ class Setup:
             - One timestep with dt=0
             - # ?Rescale stretchmapping? Idk how to do it if there are multiple balls.
         """
-        self.write_json_params()
+        self.plot = ShamPlot(self.model, self.ctx, self.balls)
+
         newpath_withoutext = shu.gen_new_path_withoutext(self.dump_prefix)
         dump_path = f"{newpath_withoutext}.sham"
+        img_path = f"{newpath_withoutext}.png"
         self.dump(dump_path)
+        self.plot.screenshot(img_path)
 
         self.model.change_htolerances(coarse=1.3, fine=min(1.3, 1.1))
         self.model.evolve_once_override_time(0.0, 0.0)
@@ -523,17 +592,16 @@ class Setup:
         dump_path = f"{newpath_withoutext}.sham"
         img_path = f"{newpath_withoutext}.png"
         self.dump(dump_path)
-        self.first_pvplot()
-        self.plotter.screenshot(img_path, scale=2)
+        self.plot.screenshot(img_path)
 
         self.ready_toloop = True
-        print("Dump success: ready to smash balls")
+        console.print("Dump success: ready to smash balls")
 
     def loop(self, t_stops):
         if not self.ready_toloop:
             raise Exception("Setup is not ready")
         for i, t in enumerate(t_stops):
-            print(f"looping {i}, still {len(t_stops)-1} to go")
+            console.print(f"looping {i}, still {len(t_stops)-i} to go")
             self.model.change_htolerances(coarse=1.3, fine=min(1.3, 1.1))
             self.model.evolve_until(t)
             self.model.change_htolerances(coarse=1.1, fine=min(1.1, 1.1))
@@ -542,8 +610,8 @@ class Setup:
             dump_path = f"{newpath_withoutext}.sham"
             img_path = f"{newpath_withoutext}.png"
             self.dump(dump_path=dump_path)  # **BEFORE** plotting
-            self.update_pvplot()
-            self.plotter.screenshot(img_path, scale=2)
+            self.plot.update_pvplot()
+            self.plot.screenshot(img_path)
 
     def write_json_params(self):
         import json
@@ -580,7 +648,7 @@ class Setup:
             pix_fmt="yuv420p",
             movflags="faststart",
         ).overwrite_output().run()
-        print(f"movie: {filemp4}")
+        console.print(f"movie: {filemp4}")
 
 
 # ! Simulation parameters
@@ -599,9 +667,9 @@ if __name__ == "__main__":
     rho0 = eos.ask("rho0")
     balls = []
     proto_earth = Tillotson_Ball(
-        center=[-1, 0, 0],
-        v_xyz=[0.5, 0, 0],
-        N_target=2e4,
+        center=[1, 0, 0],
+        v_xyz=[-0.2, 0, 0],
+        N_target=5e5,
         rho_center=5.0 * rho0,
         u_int=0.0,
         eos=eos,
@@ -611,9 +679,9 @@ if __name__ == "__main__":
     balls.append(proto_earth)
 
     theia = Tillotson_Ball(
-        center=[1, 0, 0],
-        v_xyz=[-0.5, 0, 0],
-        N_target=2e3,
+        center=[-1, 0, 0],
+        v_xyz=[0.8, 0.5, 0],
+        N_target=5e4,
         rho_center=1.5 * rho0,
         u_int=0.0,
         eos=eos,
@@ -624,18 +692,18 @@ if __name__ == "__main__":
 
     #!####################################
 
-    nb_dumps = 100
-    tf_cl = 1  # durée de la run en temps de chute libre (environ)
+    nb_dumps = 600
+    tf_cl = 18  # durée de la run en temps de chute libre (environ)
     #! #####################################
     setup = Setup(
-        SG="mm", eos=eos, balls=balls, nb_dumps=nb_dumps, tf=tf_cl, overwrite=True
+        SG="mm", eos=eos, balls=balls, nb_dumps=nb_dumps, tf=tf_cl, clear=True
     )
 
     tcl = setup.get_free_fall_time()
     tf = tf_cl * tcl
     t_stops = np.linspace(0, tf, nb_dumps)
     setup.ready_set_go()
-    print(t_stops)
+    console.print(t_stops)
     setup.loop(t_stops)
     setup.movie()
 

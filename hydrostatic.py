@@ -180,7 +180,7 @@ def solve_energy_cold(params):
     rho0 = params["rho0"]
     sol = solve_ivp(
         energy_cold_ode,
-        [rho0, 10 * rho0],
+        [rho0, 8 * rho0],
         [0],
         args=(params,),
         dense_output=True,
@@ -188,8 +188,28 @@ def solve_energy_cold(params):
         atol=1e-8,  # TODO what is that
         method="RK45",
     )
-    ufunc = lambda rho: sol.sol(rho)[0, :]
-    return ufunc
+    solm = solve_ivp(
+        energy_cold_ode,
+        [rho0, 1e-4],
+        [0],
+        args=(params,),
+        dense_output=True,
+        rtol=1e-8,  # TODO what is that Tolérance fine pour la précision
+        atol=1e-8,  # TODO what is that
+        method="RK45",
+    )
+
+    num_points = 200
+    rhop = np.linspace(rho0, 8 * rho0, num_points)[1:]
+    rhom = np.linspace(0, rho0, num_points)
+    up = sol.sol(rhop)[0, :]
+    um = solm.sol(rhom)[0, :]
+
+    rhotab = np.concatenate((rhom, rhop))
+    utab = np.concatenate((um, up))
+
+    # ufunc = lambda rho: sol.sol(rho)[0, :]
+    return rhotab, utab
 
 
 def get_tillotson_pressure_sound(rho, u, params):
@@ -346,26 +366,21 @@ def get_tillotson_pressure_sound(rho, u, params):
     return P_out, cs_out
 
 
-Rearth = 6371e3
-Mearth = 5.972e24
-Tearth = np.sqrt(Rearth**3 / (Mearth * 6.67e-11))
+def get_tillotson_cold_energy_granite(rho):
+    """
+    take earth unit, returns earth unit
 
+    :param rho: earth unit
+    """
+    a = 3.0021e-1  # SI fit parameters that work well for Granite
+    b = -9.5284e2  # SI fit parameters that work well for Granite
+    c = 4.2450e5  # SI fit parameters that work well for Granite
+    density_unit_earth = 23093.884200654968
+    sp_energy_unit_earth = 62522743.68231048
 
-class Unitsystem:
-    def __init__(self, unit_name="earth"):
-        if unit_name == "earth":
-            self.length = Rearth
-            self.time = Tearth
-            self.mass = Mearth
-        pass
-
-    def to(self, name):
-        if name == "metre":
-            return self.length
-        elif name == "second":
-            return self.time
-        elif name == "kilogram":
-            return self.mass
+    rhoa = rho * density_unit_earth
+    uc = a * rhoa**2 + b * rhoa + c
+    return uc / sp_energy_unit_earth
 
 
 def adimension(tillotson_values, unit):
@@ -405,7 +420,9 @@ def adimension(tillotson_values, unit):
 
 
 if __name__ == "__main__":
-    codeearth = Unitsystem()
+    import unitsystem
+
+    codeearth = unitsystem.Unitsystem()
     # Paramètres pour le Granite (Source: Melosh 1989 / Benz code)
     # Unités SI converties depuis CGS si nécessaire
     # kwargs_tillotson = {
@@ -540,18 +557,30 @@ if __name__ == "__main__":
     axmass["r"].set_ylabel(r"$R_{\rm max}$")
     axmass["r"].set_title(r"Planet radius evolution with $\rho/\rho_0$ (RK45)")
 
-    u_c_func = solve_energy_cold(kwargs_tillotson)
-    rho_array = np.linspace(rho0, 6 * rho0, 100)
-    axmass["u_c"].plot(rho_array / rho0, u_c_func(rho_array))
+    # u_c_func = solve_energy_cold(kwargs_tillotson)
+    # rho_array = np.linspace(rho0, 6 * rho0, 100)
+    rho_array, u_array = solve_energy_cold(kwargs_tillotson)
+    axmass["u_c"].plot(rho_array, u_array)
     axmass["u_c"].set_ylabel(r"$u_c$")
-    axmass["u_c"].set_title(r"Cold energy curve with $\rho_{\rm center}/\rho_0$")
+    axmass["u_c"].set_title(r"Cold energy curve with $\rho$")
+
+    a, b, c = np.polyfit(rho_array, u_array, deg=2)
+    axmass["u_c"].plot(
+        rho_array,
+        a * rho_array**2 + b * rho_array + c,
+        color="black",
+        ls="--",
+        label=f"a{a:.4e} b{b:.4e} c{c:.4e}",
+    )
+
+    axmass["u_c"].axvline(x=rho0, color="black", ls=":", alpha=0.2, label=r"$\rho_0$")
 
     for label, ax in axmass.items():
 
         if label == "profile":
             ax.set_xlabel(r"$r$")
         elif label == "u_c":
-            ax.set_xlabel(r"$\rho/\rho_0$")
+            ax.set_xlabel(r"$\rho$")
         else:
             ax.set_xlabel(r"$\rho_{\rm center}/\rho_0$")
 
