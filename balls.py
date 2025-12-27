@@ -1,3 +1,10 @@
+import shamrock
+
+if not shamrock.sys.is_initialized():
+    print("coucou")
+    shamrock.change_loglevel(1)
+    shamrock.sys.init("0:0")
+
 import numpy as np
 import sham_utilities as shu
 import stretchmap_utilities as stu
@@ -20,7 +27,6 @@ pv.set_plot_theme("dark")
 color_text = "white"
 pv.global_theme.font.color = color_text
 
-import shamrock
 
 shamrock.enable_experimental_features()
 
@@ -70,31 +76,9 @@ symbols = {
 }
 
 
-Tillotson_parameters_Fe = {
-    "rho0": 7.8e3,  # kg/m^3
-    "E0": 0.095e8,  # J/kg (Spécifique energy of sublimation approx)
-    "a": 0.5,
-    "b": 1.5,
-    "A": 1.279e11,  # Pa (Bulk modulus A)
-    "B": 1.05e11,  # Pa (Non-linear modulus B)
-    "alpha": 5.0,
-    "beta": 5.0,
-    "u_iv": 0.024e8,  # TODO check this
-    "u_cv": 0.0867e8,
-}
+Tillotson_parameters_Fe = hy.Tillotson_parameters_Fe
 
-Tillotson_parameters_Granite = {
-    "rho0": 2.7e3,  # kg/m^3
-    "E0": 1.6e7,  # J/kg (Spécifique energy of sublimation approx)
-    "a": 0.5,
-    "b": 1.3,
-    "A": 1.8e10,  # Pa (Bulk modulus A)
-    "B": 1.8e10,  # Pa (Non-linear modulus B)
-    "alpha": 5.0,
-    "beta": 5.0,
-    "u_iv": 3.5e6,
-    "u_cv": 1.8e7,
-}
+Tillotson_parameters_Granite = hy.Tillotson_parameters_Granite
 
 
 class ShamPlot:
@@ -236,6 +220,8 @@ class ShamPlot:
         new_cloud = pv.PolyData(self.data_sham["xyz"])
         new_cloud[r"$\\rho$"] = self.data_sham["rho"]
         self.mesh_actor.mapper.SetInputData(new_cloud)
+
+        self.update_time()
 
         self.plotter.render()
         # self.plotter.update()
@@ -397,10 +383,6 @@ class Setup:
         self.nb_dumps = nb_dumps
         self.tf = tf
 
-        if not shamrock.sys.is_initialized():
-            shamrock.change_loglevel(1)
-            shamrock.sys.init("0:0")
-
         self.ctx = shamrock.Context()
         self.ctx.pdata_layout_new()
         self.model = shamrock.get_Model_SPH(
@@ -411,7 +393,9 @@ class Setup:
         self.eps_plummer = self.get_eps_plummer()
 
         self.dump_prefix = self.gen_dump_prefix()
-        self.folder_path = shu.handle_dump(dump_prefix=self.dump_prefix, clear=clear)
+        self.folder_path = shu.handle_dump(
+            __file__, dump_prefix=self.dump_prefix, clear=clear
+        )
         self.write_json_params()
 
         self.init_model()
@@ -544,7 +528,7 @@ class Setup:
         dump_prefix += f"{self.eos.id}_"
         dump_prefix += f"{int(self.balls[0].N_target/1000)}k_"
         dump_prefix += f"{self.SG}_"
-        dump_prefix += "cd10_uc_skewv2_"
+        dump_prefix += "cd10_uc_skewv3_"
         return dump_prefix
 
     def get_free_fall_time(self):
@@ -667,9 +651,9 @@ if __name__ == "__main__":
     rho0 = eos.ask("rho0")
     balls = []
     proto_earth = Tillotson_Ball(
-        center=[1, 0, 0],
+        center=[2, 0, 0],
         v_xyz=[-0.2, 0, 0],
-        N_target=5e5,
+        N_target=2e5,
         rho_center=5.0 * rho0,
         u_int=0.0,
         eos=eos,
@@ -679,10 +663,10 @@ if __name__ == "__main__":
     balls.append(proto_earth)
 
     theia = Tillotson_Ball(
-        center=[-1, 0, 0],
-        v_xyz=[0.8, 0.5, 0],
-        N_target=5e4,
-        rho_center=1.5 * rho0,
+        center=[-2, 0, 0],
+        v_xyz=[0.4, 0.3, 0],
+        N_target=1e5,
+        rho_center=2 * rho0,
         u_int=0.0,
         eos=eos,
         rescale=1.05,

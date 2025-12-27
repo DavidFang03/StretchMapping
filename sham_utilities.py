@@ -105,7 +105,9 @@ def gen_new_path_withoutext(dump_prefix):
     return path_withoutext
 
 
-def handle_dump(*, dump_prefix=None, folder_path=None, clear=True, onlyext=""):
+def handle_dump(
+    script_file, *, dump_prefix=None, folder_path=None, clear=True, onlyext=""
+):
     """
     Only kwargs.
     If dump_prefix is given : remove the content of the last folder or creates new folder
@@ -141,14 +143,14 @@ def handle_dump(*, dump_prefix=None, folder_path=None, clear=True, onlyext=""):
                 f"[r]WARNING[/r] directory exists already, probably not clean: {folder_path} "
             )
 
-    def keep_copy(folder_path, dump_prefix):
+    def keep_copy(folder_path, dump_prefix, script_path):
         copy_name = f"{folder_path}/{dump_prefix}.py"
         i = 0
         while os.path.isfile(copy_name):
             i += 1
             copy_name = f"{folder_path}/{dump_prefix}_{i}.py"
 
-        command = f"cp {os.path.abspath(__file__)} {copy_name}"
+        command = f"cp {os.path.abspath(script_path)} {copy_name}"
         console.print("I'm keeping a copy of your runscript", command)
         os.system(command)
 
@@ -173,6 +175,6 @@ def handle_dump(*, dump_prefix=None, folder_path=None, clear=True, onlyext=""):
             create_folder(last_eventual_folder)
         folder_path = last_eventual_folder
 
-    keep_copy(folder_path, dump_prefix)
+    keep_copy(folder_path, dump_prefix, script_file)
     console.print(f"{folder_path} is ready to handle your new instructions")
     return folder_path
