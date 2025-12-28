@@ -183,7 +183,11 @@ class ShamPlot:
             self.model.get_particle_mass()
             * (self.model.get_hfact() / data_sham["hpart"]) ** 3
         )
-        data_sham["u_c"] = hy.get_tillotson_cold_energy_granite(data_sham["rho"])
+        data_sham["u_c"] = hy.get_cold_energy(
+            data_sham["rho"],
+            material=self.balls[0].eos.material,
+            unit=self.balls[0].unit,
+        )
 
         self.data_sham = data_sham
 
@@ -274,7 +278,7 @@ class EoS:
 
     def get_p_and_cs(self, rho, u_int):
         if self.id == "tillotson":
-            return hy.get_tillotson_pressure_sound(rho, u_int, self.params)
+            return hy.get_tillotson_pressure_sound(rho, u_int, self.params, self.unit)
 
     def tojson(self):
         def format_dict(dict):
@@ -303,7 +307,9 @@ class EoS:
 
 
 class Tillotson_Ball:
-    def __init__(self, center, v_xyz, N_target, rho_center, u_int, eos, rescale=1.0):
+    def __init__(
+        self, center, v_xyz, N_target, rho_center, u_int, eos, unit, rescale=1.0
+    ):
         """
         Can be created before setup
 
@@ -318,6 +324,8 @@ class Tillotson_Ball:
         self.center = np.array(center)
         self.v_xyz = (v_xyz[0], v_xyz[1], v_xyz[2])
         self.N_target = int(N_target)
+        self.unit = unit
+        self.eos = eos
         self.rescale = rescale
 
         rho_center = rho_center / unitsystem.density(eos.unit)
@@ -355,9 +363,7 @@ class Tillotson_Ball:
             self.data["density"], self.data["energy"]
         )
 
-        self.data["cold_energy"] = hy.get_tillotson_cold_energy_granite(
-            self.data["density"]
-        )
+        hy.get_cold_energy(self.data["density"], material=eos.material, unit=self.unit)
 
         # self.show_profile()  # DEBUG
 
@@ -651,12 +657,15 @@ if __name__ == "__main__":
     rho0 = eos.ask("rho0")
     balls = []
     proto_earth = Tillotson_Ball(
-        center=[2, 0, 0],
+        center=[3, 0, 0],
         v_xyz=[-0.2, 0, 0],
-        N_target=2e5,
+        # center=[0, 0, 0],
+        # v_xyz=[0, 0, 0],
+        N_target=5e5,
         rho_center=5.0 * rho0,
         u_int=0.0,
         eos=eos,
+        unit=code_unit,
         rescale=1.05,
     )
 
@@ -664,11 +673,12 @@ if __name__ == "__main__":
 
     theia = Tillotson_Ball(
         center=[-2, 0, 0],
-        v_xyz=[0.4, 0.3, 0],
+        v_xyz=[0.4, 0.1, 0],
         N_target=1e5,
         rho_center=2 * rho0,
         u_int=0.0,
         eos=eos,
+        unit=code_unit,
         rescale=1.05,
     )
 
@@ -676,7 +686,7 @@ if __name__ == "__main__":
 
     #!####################################
 
-    nb_dumps = 600
+    nb_dumps = 500
     tf_cl = 18  # durée de la run en temps de chute libre (environ)
     #! #####################################
     setup = Setup(

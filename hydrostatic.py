@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 import stretchmap_utilities as su
+import unitsystem
 
 # Constante Gravitationnelle (SI)
 G = 6.67430e-11
@@ -44,9 +45,10 @@ def get_tillotson_derivatives(rho, kwargs):
     b = kwargs["b"]
     A = kwargs["A"]
     B = kwargs["B"]
-    u_int = kwargs["u_int"]  # constant ?
+    T = kwargs["T"]  # constant ?
 
     # Variables intermédiaires
+    u_int = get_cold_energy(rho, material="Granite", unit=kwargs["unit"])
     eta = rho / rho0
     chi = eta - 1.0
 
@@ -89,20 +91,43 @@ def get_tillotson_derivatives(rho, kwargs):
     return p_prime_val, p_second_val, P
 
 
-def hydrostatic_ode(r, vec, kwargs):
+def get_cold_energy(rho, material, unit):
+    """
+    Return cold_energy (SI)
+
+    :param rho: densiy (SI)
+    :param material: Granite, etc..
+    """
+    rhoa = rho * unitsystem.density(unit)
+    if material == "Granite":
+        # SI fit parameters that work well for Granite
+        a = 3.0021e-1
+        b = -9.5284e2
+        c = 4.2450e5
+
+    uc = a * rhoa * rhoa + b * rhoa + c
+    return uc / unitsystem.sp_energy(unit)
+
+
+def hydrostatic_ode(r, vec, kwargs_ivp):
     """
     Système d'équations différentielles :
     d(mu)/dr = nu
     d(nu)/dr = (nu/mu - 2/r)*nu - (p''/p')*nu^2 - (4*pi*G*mu^2)/p'
     """
     mu, nu = vec
-    G = kwargs.get("G")
+    unit = kwargs_ivp.get("unit")
+    length = unit.to("metre")
+    time = unit.to("second")
+    mass = unit.to("kilogram")
+    unitG = length**3 / mass / time**2
+    G = 6.67e-11 / unitG
 
     # Protection contre les valeurs physiques aberrantes
     if mu <= 0:
         return [nu, 0]
 
-    p_prime_val, p_second_val, _ = get_tillotson_derivatives(mu, kwargs)
+    p_prime_val, p_second_val, _ = get_tillotson_derivatives(mu, kwargs_ivp)
 
     # Gestion de la singularité en r=0
     # Si r est très petit, le terme 2/r domine.
@@ -128,11 +153,13 @@ def hydrostatic_ode(r, vec, kwargs):
 def surface_event(r, vec, kwargs):
     """Stop integration when P = 0"""
     mu, nu = vec
-    pressure = get_tillotson_pressure_sound(mu, kwargs["u_int"], kwargs)[0][-1]
+    pressure = get_tillotson_pressure_sound(mu, kwargs["T"], kwargs, kwargs["unit"])[0][
+        -1
+    ]
     return pressure
 
 
-def solve_hydrostatic_tillotson(tillotson_params, rho_center, u_int, unit):
+def solve_hydrostatic_tillotson(tillotson_params, rho_center, T, unit):
     """
     Returns tabx, tabrho by solving Tillotson+Hydrostatic equilibrium
 
@@ -151,15 +178,10 @@ def solve_hydrostatic_tillotson(tillotson_params, rho_center, u_int, unit):
     rmin = 1e-4  # Avoid r=0
     rmax = 1e8  # Should be large enough
 
-    length = unit.to("metre")
-    time = unit.to("second")
-    mass = unit.to("kilogram")
-    unitG = length**3 / mass / time**2
-    G = 6.67e-11 / unitG
     print("G", G)
     kwargstoivp = tillotson_params.copy()
-    kwargstoivp["G"] = G
-    kwargstoivp["u_int"] = u_int
+    kwargstoivp["unit"] = unit
+    kwargstoivp["T"] = T
 
     sol = solve_ivp(
         hydrostatic_ode,
@@ -184,7 +206,7 @@ def solve_hydrostatic_tillotson(tillotson_params, rho_center, u_int, unit):
     Rho_discrete = sol.sol(R_discrete)[0, :]
 
     mask_unphysical = (
-        get_tillotson_pressure_sound(Rho_discrete, u_int, tillotson_params)[0] <= 0
+        get_tillotson_pressure_sound(Rho_discrete, T, tillotson_params, unit)[0] <= 0
     )
 
     Rho_discrete[mask_unphysical] = 1e-6
@@ -192,7 +214,7 @@ def solve_hydrostatic_tillotson(tillotson_params, rho_center, u_int, unit):
     return R_discrete, Rho_discrete
 
 
-def solve_energy_cold(params):
+def solve_energy_cold(params, unit):
     """
     Solves cold energy curve. Return lambda function u_c(rho)
 
@@ -201,7 +223,7 @@ def solve_energy_cold(params):
     """
 
     def energy_cold_ode(rho, u, params):
-        return get_tillotson_pressure_sound(rho, u, params)[0] / rho**2
+        return get_tillotson_pressure_sound(rho, u, params, unit)[0] / rho**2
 
     rho0 = params["rho0"]
     sol = solve_ivp(
@@ -238,7 +260,7 @@ def solve_energy_cold(params):
     return rhotab, utab
 
 
-def get_tillotson_pressure_sound(rho, u, params):
+def get_tillotson_pressure_sound(rho, T, params, unit):
     """
     Returns (P,cs) Tillotson.
 
@@ -249,7 +271,7 @@ def get_tillotson_pressure_sound(rho, u, params):
     """
     # 1. Data structure
     rho = np.atleast_1d(rho)
-    u = np.atleast_1d(u)
+    u = get_cold_energy(rho, material="Granite", unit=unit)
     n_points = len(rho)
     if len(u) == 1:
         u = [u[0] for _ in range(n_points)]
@@ -392,23 +414,6 @@ def get_tillotson_pressure_sound(rho, u, params):
     return P_out, cs_out
 
 
-def get_tillotson_cold_energy_granite(rho):
-    """
-    take earth unit, returns earth unit
-
-    :param rho: earth unit
-    """
-    a = 3.0021e-1  # SI fit parameters that work well for Granite
-    b = -9.5284e2  # SI fit parameters that work well for Granite
-    c = 4.2450e5  # SI fit parameters that work well for Granite
-    density_unit_earth = 23093.884200654968
-    sp_energy_unit_earth = 62522743.68231048
-
-    rhoa = rho * density_unit_earth
-    uc = a * rhoa**2 + b * rhoa + c
-    return uc / sp_energy_unit_earth
-
-
 def adimension(tillotson_values, unit):
     length = unit.to("metre")
     time = unit.to("second")
@@ -548,7 +553,7 @@ if __name__ == "__main__":
     rmax_array = []
     for i, rhocenter in enumerate(rhocenter_array):
         tabx, tabrho = solve_hydrostatic_tillotson(
-            kwargs_tillotson, rhocenter, u_int=0, unit=siunit
+            kwargs_tillotson, rhocenter, T=0, unit=siunit
         )
         mtot = su.integrate_target([tabx, tabrho])
         rmax = np.max(tabx[tabrho > 10])
@@ -585,7 +590,7 @@ if __name__ == "__main__":
 
     # u_c_func = solve_energy_cold(kwargs_tillotson)
     # rho_array = np.linspace(rho0, 6 * rho0, 100)
-    rho_array, u_array = solve_energy_cold(kwargs_tillotson)
+    rho_array, u_array = solve_energy_cold(kwargs_tillotson, unit=siunit)
     axmass["u_c"].plot(rho_array, u_array)
     axmass["u_c"].set_ylabel(r"$u_c$")
     axmass["u_c"].set_title(r"Cold energy curve with $\rho$")

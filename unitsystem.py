@@ -5,10 +5,16 @@ def density(unit):
 
 
 def energy(unit):
-    s = unit.to("second")
     l = unit.to("metre")
+    s = unit.to("second")
     m = unit.to("kilogram")
-    return m / l**2 / s**2
+    return m * l**2 / s**2
+
+
+def sp_energy(unit):
+    l = unit.to("metre")
+    s = unit.to("second")
+    return l**2 / s**2
 
 
 def speed(unit):
