@@ -661,7 +661,7 @@ if __name__ == "__main__":
         v_xyz=[-0.2, 0, 0],
         # center=[0, 0, 0],
         # v_xyz=[0, 0, 0],
-        N_target=5e5,
+        N_target=1e5,
         rho_center=5.0 * rho0,
         u_int=0.0,
         eos=eos,

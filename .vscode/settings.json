@@ -1,3 +1,6 @@
 {
-    "workbench.colorTheme": "Kolada"
+    "workbench.colorTheme": "Kolada",
+    "black-formatter.args": [
+        "--line-length=100"
+    ]
 }
