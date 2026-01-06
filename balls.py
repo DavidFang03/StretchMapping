@@ -82,10 +82,12 @@ Tillotson_parameters_Granite = hy.Tillotson_parameters_Granite
 
 
 class ShamPlot:
-    def __init__(self, model, ctx, balls=[]):
+    def __init__(self, model, ctx, tasks, balls=[]):
         self.ctx = ctx
         self.model = model
         self.balls = balls
+
+        self.tasks = tasks
 
         self.subplot_nbs = {
             "density": 0,
@@ -115,17 +117,17 @@ class ShamPlot:
         self.first_pvplot()
 
     def first_pvplot(self):
+        tasks_nb = 5
+        # tasks_nb = len(self.tasks) # TODO doesn't work
         self.update_data()
         self.plotter = pv.Plotter(
-            shape="5|1",
+            shape=f"{tasks_nb}|1",
             splitting_position=0.4375,
             window_size=(960, 540),
             off_screen=True,
         )
 
-        for i, quantity in enumerate(
-            ["density", "energy", "soundspeed", "pressure", "cold_energy"]
-        ):
+        for i, quantity in enumerate(self.tasks):
             id = ids[quantity]
             pv_color = pv.Color(colors[quantity], opacity=0.5)
             self.plotter.subplot(i)
@@ -140,7 +142,7 @@ class ShamPlot:
                     fmt=fmts[quantity],
                 )
             self.plotter.add_chart(chart)
-            if i < 4:
+            if i < 3:
                 chart.x_axis.toggle()
                 chart.x_axis.ticks_visible = False
                 chart.x_axis.tick_labels_visible = False
@@ -155,7 +157,7 @@ class ShamPlot:
 
             self.charts[quantity] = chart
 
-        self.plotter.subplot(i + 1)
+        self.plotter.subplot(self.subplot_nbs["mesh"])
         point_cloud = pv.PolyData(self.data_sham["xyz"])
         point_cloud[r"\rho"] = self.data_sham["rho"]
         self.mesh_actor = self.plotter.add_mesh(
@@ -165,7 +167,7 @@ class ShamPlot:
             point_size=5.0,
         )
         self.plotter.show_bounds(
-            bounds=[-3, 3, -3, 3, -3, 3],
+            bounds=[-0.01, 0.01, -0.01, 0.01, -0.01, 0.01],
             grid="back",
             location="outer",
             ticks="both",
@@ -173,21 +175,21 @@ class ShamPlot:
             n_ylabels=2,
             n_zlabels=2,
         )
-        self.plotter.camera.position = (-10, 10, 10)
+        self.plotter.camera.position = (-0.02, 0.02, 0.02)
         self.update_time()
 
     def update_data(self):
         data_sham = self.ctx.collect_data()
         data_sham["r"] = np.linalg.norm(data_sham["xyz"], axis=1)
         data_sham["rho"] = (
-            self.model.get_particle_mass()
-            * (self.model.get_hfact() / data_sham["hpart"]) ** 3
+            self.model.get_particle_mass() * (self.model.get_hfact() / data_sham["hpart"]) ** 3
         )
-        data_sham["u_c"] = hy.get_cold_energy(
-            data_sham["rho"],
-            material=self.balls[0].eos.material,
-            unit=self.balls[0].unit,
-        )
+        if "cold_energy" in self.tasks:
+            data_sham["u_c"] = hy.get_cold_energy(
+                data_sham["rho"],
+                material=self.balls[0].eos.material,
+                unit=self.balls[0].unit,
+            )
 
         self.data_sham = data_sham
 
@@ -206,9 +208,7 @@ class ShamPlot:
 
         gc.collect()
         # self.chart.clear()
-        for i, quantity in enumerate(
-            ["density", "energy", "soundspeed", "pressure", "cold_energy"]
-        ):
+        for i, quantity in enumerate(self.tasks):
             self.plotter.subplot(i)
             chart = self.charts[quantity]
             id = ids[quantity]
@@ -250,6 +250,8 @@ class EoS:
         self.details = details
         if id == "tillotson":
             self.setup_Tillotson_EoS()
+        elif id == "fermi":
+            self.setup_Fermi_EoS()
         else:
             raise NotImplementedError()
 
@@ -264,21 +266,29 @@ class EoS:
         self.originalparams = params.copy()
         self.params = hy.adimension(params, self.unit)
 
+    def setup_Fermi_EoS(self):
+        mu_e = self.details["mu_e"]
+        self.params = {"mu_e": mu_e}
+
     def solve_hydrostatic(self, values):
         """
         must return tabx, tabrho
         """
         if self.id == "tillotson":
-            rho_center = values["rho_center"]
-            u_int = values["u_int"]
-            tabx, tabrho = hy.solve_hydrostatic_tillotson(
-                self.params, rho_center, u_int, self.unit
-            )
+            rho_center = values["rho_center"] / unitsystem.density(self.unit)
+            u_int = values["u_int"] / unitsystem.energy(self.unit)
+            tabx, tabrho = hy.solve_hydrostatic_tillotson(self.params, rho_center, u_int, self.unit)
+        elif self.id == "fermi":
+            y_0 = values["y_0"]
+            mu_e = self.details["mu_e"]
+            tabx, tabrho = hy.solve_Chandrasekhar(mu_e, y_0, self.unit)
         return tabx, tabrho
 
     def get_p_and_cs(self, rho, u_int):
         if self.id == "tillotson":
             return hy.get_tillotson_pressure_sound(rho, u_int, self.params, self.unit)
+        elif self.id == "fermi":
+            return hy.get_fermi_pressure_sound(rho, self.params, self.unit)
 
     def tojson(self):
         def format_dict(dict):
@@ -302,14 +312,12 @@ class EoS:
 
     def ask(self, key):
         if key not in self.originalparams:
-            raise Exception()
+            raise Exception(f"{key} is not in {self.originalparams}")
         return self.originalparams[key]
 
 
-class Tillotson_Ball:
-    def __init__(
-        self, center, v_xyz, N_target, rho_center, u_int, eos, unit, rescale=1.0
-    ):
+class Ball:
+    def __init__(self, center, v_xyz, N_target, eos, input_values, unit, rescale=1.0):
         """
         Can be created before setup
 
@@ -328,9 +336,6 @@ class Tillotson_Ball:
         self.eos = eos
         self.rescale = rescale
 
-        rho_center = rho_center / unitsystem.density(eos.unit)
-        u_int = u_int / unitsystem.energy(eos.unit)
-
         self.data = {
             "r": None,
             "density": None,
@@ -342,7 +347,7 @@ class Tillotson_Ball:
         (
             self.data["r"],
             self.data["density"],
-        ) = eos.solve_hydrostatic({"rho_center": rho_center, "u_int": u_int})
+        ) = eos.solve_hydrostatic(input_values)
         self.mtot_target = stu.integrate_target([self.data["r"], self.data["density"]])
 
         xmax = float(np.max(self.data["r"]))
@@ -358,12 +363,13 @@ class Tillotson_Ball:
         # self.bmax = self.center + np.array([-xmax, -xmax, -xmax])
         self.pmass = self.mtot_target / (N_target / 2)
 
+        u_int = input_values.get("u_int", None)
         self.data["energy"] = [u_int for _ in self.data["r"]]
         self.data["pressure"], self.data["soundspeed"] = eos.get_p_and_cs(
             self.data["density"], self.data["energy"]
         )
 
-        hy.get_cold_energy(self.data["density"], material=eos.material, unit=self.unit)
+        # hy.get_cold_energy(self.data["density"], material=eos.material, unit=self.unit)
 
         # self.show_profile()  # DEBUG
 
@@ -379,10 +385,11 @@ class Tillotson_Ball:
 
 
 class Setup:
-    def __init__(self, SG, eos, balls, nb_dumps, tf, clear):
+    def __init__(self, SG, balls, nb_dumps, tf, clear):
         self.SG = SG
-        self.eos = eos
+
         self.balls = balls
+        self.eos = balls[0].eos  # TODO check if all balls have same EoS
         self.unit = eos.unit
         self.ready_toloop = False
         self.fig = None
@@ -391,17 +398,13 @@ class Setup:
 
         self.ctx = shamrock.Context()
         self.ctx.pdata_layout_new()
-        self.model = shamrock.get_Model_SPH(
-            context=self.ctx, vector_type="f64_3", sph_kernel="M4"
-        )
+        self.model = shamrock.get_Model_SPH(context=self.ctx, vector_type="f64_3", sph_kernel="M4")
         self.cfg = self.model.gen_default_config()
 
         self.eps_plummer = self.get_eps_plummer()
 
         self.dump_prefix = self.gen_dump_prefix()
-        self.folder_path = shu.handle_dump(
-            __file__, dump_prefix=self.dump_prefix, clear=clear
-        )
+        self.folder_path = shu.handle_dump(__file__, dump_prefix=self.dump_prefix, clear=clear)
         self.write_json_params()
 
         self.init_model()
@@ -447,6 +450,8 @@ class Setup:
         # // self.cfg.set_eos_polytropic(**self.params)
         if self.eos.id == "tillotson":
             self.cfg.set_eos_tillotson(**self.eos.params)
+        elif self.eos.id == "fermi":
+            self.cfg.set_eos_fermi(**self.eos.params)
         else:
             raise NotImplementedError()
         # _______________________________________________________________________________
@@ -520,8 +525,17 @@ class Setup:
                 mtot=ball.mtot_target * ball.rescale,
             )
 
+            def is_in_sphere(pt):
+                x, y, z = pt
+                return (x**2 + y**2 + z**2) < ball.xmax * ball.xmax
+
+            print(ball.xmax)
+            cropped_stretched_hcp = setup.make_modifier_filter(
+                parent=stretched_hcp, filter=is_in_sphere
+            )
+
             offset_hcp = setup.make_modifier_offset(
-                parent=stretched_hcp,
+                parent=cropped_stretched_hcp,
                 offset_position=(0, 0, 0),
                 offset_velocity=ball.v_xyz,
             )
@@ -566,7 +580,11 @@ class Setup:
             - One timestep with dt=0
             - # ?Rescale stretchmapping? Idk how to do it if there are multiple balls.
         """
-        self.plot = ShamPlot(self.model, self.ctx, self.balls)
+        tasks = ["density", "energy", "soundspeed", "pressure"]
+        if self.eos.id == "tillotson":
+            tasks.append("cold_energy")
+        self.tasks = tasks
+        self.plot = ShamPlot(self.model, self.ctx, tasks, self.balls)
 
         newpath_withoutext = shu.gen_new_path_withoutext(self.dump_prefix)
         dump_path = f"{newpath_withoutext}.sham"
@@ -643,55 +661,67 @@ class Setup:
 
 # ! Simulation parameters
 if __name__ == "__main__":
-
+    balls = []
     si = shamrock.UnitSystem()
     sicte = shamrock.Constants(si)
 
+    # code_unit = shamrock.UnitSystem(
+    #     unit_length=sicte.earth_radius(),
+    #     unit_mass=sicte.earth_mass(),
+    #     unit_time=np.sqrt(sicte.earth_radius() ** 3.0 / sicte.G() / sicte.earth_mass()),
+    # )
     code_unit = shamrock.UnitSystem(
-        unit_length=sicte.earth_radius(),
-        unit_mass=sicte.earth_mass(),
-        unit_time=np.sqrt(sicte.earth_radius() ** 3.0 / sicte.G() / sicte.earth_mass()),
+        unit_length=sicte.solar_radius(),
+        unit_mass=sicte.sol_mass(),
+        unit_time=np.sqrt(sicte.solar_radius() ** 3.0 / sicte.G() / sicte.sol_mass()),
     )
 
-    eos = EoS(id="tillotson", details={"material": "Granite"}, unit=code_unit)
-    rho0 = eos.ask("rho0")
-    balls = []
-    proto_earth = Tillotson_Ball(
-        center=[3, 0, 0],
-        v_xyz=[-0.2, 0, 0],
-        # center=[0, 0, 0],
-        # v_xyz=[0, 0, 0],
-        N_target=1e5,
-        rho_center=5.0 * rho0,
-        u_int=0.0,
+    # eos = EoS(id="tillotson", details={"material": "Granite"}, unit=code_unit)
+    # rho0 = eos.ask("rho0")
+
+    # proto_earth = Ball(
+    #     center=[3, 0, 0],
+    #     v_xyz=[-0.2, 0, 0],
+    #     # center=[0, 0, 0],
+    #     # v_xyz=[0, 0, 0],
+    #     N_target=1e5,
+    #     eos=eos,
+    #     input_values={"rho_center": 5.0 * rho0, "u_int": 0.0},
+    #     unit=code_unit,
+    #     rescale=1.05,
+    # )
+
+    # balls.append(proto_earth)
+
+    # theia = Ball(
+    #     center=[-2, 0, 0],
+    #     v_xyz=[0.4, 0.1, 0],
+    #     N_target=1e5,
+    #     eos=eos,
+    #     input_values={"rho_center": 2 * rho0, "u_int": 0.0},
+    #     unit=code_unit,
+    #     rescale=1.05,
+    # )
+
+    # balls.append(theia)
+    eos = EoS(id="fermi", details={"mu_e": 2}, unit=code_unit)
+    fermi_ball = Ball(
+        center=[0, 0, 0],
+        v_xyz=[0, 0, 0],
+        N_target=2e5,
         eos=eos,
+        input_values={"y_0": 5},
         unit=code_unit,
         rescale=1.05,
     )
-
-    balls.append(proto_earth)
-
-    theia = Tillotson_Ball(
-        center=[-2, 0, 0],
-        v_xyz=[0.4, 0.1, 0],
-        N_target=1e5,
-        rho_center=2 * rho0,
-        u_int=0.0,
-        eos=eos,
-        unit=code_unit,
-        rescale=1.05,
-    )
-
-    balls.append(theia)
+    balls.append(fermi_ball)
 
     #!####################################
 
-    nb_dumps = 500
-    tf_cl = 18  # durée de la run en temps de chute libre (environ)
+    nb_dumps = 20
+    tf_cl = 4  # durée de la run en temps de chute libre (environ)
     #! #####################################
-    setup = Setup(
-        SG="mm", eos=eos, balls=balls, nb_dumps=nb_dumps, tf=tf_cl, clear=True
-    )
+    setup = Setup(SG="mm", balls=balls, nb_dumps=nb_dumps, tf=tf_cl, clear=True)
 
     tcl = setup.get_free_fall_time()
     tf = tf_cl * tcl

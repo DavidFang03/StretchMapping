@@ -150,21 +150,18 @@ def hydrostatic_ode(r, vec, kwargs_ivp):
     return [nu, dnu_dr]
 
 
-def surface_event(r, vec, kwargs):
-    """Stop integration when P = 0"""
-    mu, nu = vec
-    pressure = get_tillotson_pressure_sound(mu, kwargs["T"], kwargs, kwargs["unit"])[0][
-        -1
-    ]
-    return pressure
-
-
 def solve_hydrostatic_tillotson(tillotson_params, rho_center, T, unit):
     """
     Returns tabx, tabrho by solving Tillotson+Hydrostatic equilibrium
 
     Input: everything must be in the same unit. Unit still has to be precised beaucause of G.
     """
+
+    def surface_event(r, vec, kwargs):
+        """Stop integration when P = 0"""
+        mu, nu = vec
+        pressure = get_tillotson_pressure_sound(mu, kwargs["T"], kwargs, kwargs["unit"])[0][-1]
+        return pressure
 
     surface_event.terminal = True
     surface_event.direction = -1
@@ -205,9 +202,7 @@ def solve_hydrostatic_tillotson(tillotson_params, rho_center, T, unit):
     R_discrete = np.linspace(sol.t[0], R_surface, num_points)
     Rho_discrete = sol.sol(R_discrete)[0, :]
 
-    mask_unphysical = (
-        get_tillotson_pressure_sound(Rho_discrete, T, tillotson_params, unit)[0] <= 0
-    )
+    mask_unphysical = get_tillotson_pressure_sound(Rho_discrete, T, tillotson_params, unit)[0] <= 0
 
     Rho_discrete[mask_unphysical] = 1e-6
 
@@ -450,6 +445,134 @@ def adimension(tillotson_values, unit):
     return tillotson_values
 
 
+def chandrasekhar_ode(eta, y, y0):
+    """
+    y = [u, v] = [Phi, Phi']
+    y0 est le paramètre du modèle
+    """
+    u, v = y
+
+    # 1. Calcul du terme RHS (partie non singulière)
+    arg = u**2 - (1 / y0) ** 2
+
+    # Si arg < 0, la densité/pression est nulle, donc l'évolution s'arrête
+    if arg < 0:
+        rhs_v = 0.0
+    else:
+        rhs_v = -((arg) ** (3 / 2))
+
+    # 2. Gestion du terme singulier (2/eta * v)
+    eta_min_threshold = 1e-6
+
+    if eta < eta_min_threshold:
+        # Près du centre, le terme singulier (2/eta * v) tend vers 0
+        # car v=Phi' tend vers 0 plus rapidement que 2/eta ne diverge.
+        # On utilise l'approximation de Taylor (Phi'(eta) ~ -A*eta/3),
+        # ce qui annule le terme: (2/eta) * (-A*eta/3) = -2A/3 (constante)
+        # Mais puisqu'on démarre l'IVP à eta_min, on peut le poser à 0
+        # car le développement en série est déjà utilisé pour y_initial.
+        term_singulier = 0.0
+    else:
+        # Loin du centre, on utilise la formule standard
+        term_singulier = (2 / eta) * v
+
+    # 3. Retourner le système (u' = v, v' = RHS - terme_singulier)
+    return [v, rhs_v - term_singulier]
+
+
+# --- 2. Définir l'événement d'arrêt (la surface)
+
+
+def solve_Chandrasekhar(mu_e, y_0, unit):
+    """
+    Return in the given unit system.
+
+    :param y_0: Input value, no dimension (=(M,R))
+    :param mu_e: EoS parameter, no dimension
+    :param unit: UnitSystem instance
+    """
+    from scipy.integrate import solve_ivp
+
+    def surface_event(eta, y, y0):
+        """Arrête l'intégration lorsque Phi = 1/y0 (la densité s'annule)"""
+        u, v = y
+        return u - (1 / y0)
+
+    # L'événement doit s'arrêter lorsque le signe change (is_terminal=True)
+    surface_event.terminal = True
+    surface_event.direction = -1  # On s'attend à ce que Phi diminue
+
+    eta_min = 1e-6
+    # Approximation de Taylor (Phi(eta) ~ 1 - A*eta^2/6, Phi'(eta) ~ -A*eta/3)
+    A = (1 - (1 / y_0) ** 2) ** (3 / 2)
+    u_initial = 1.0 - (A / 6) * eta_min**2
+    v_initial = -(A / 3) * eta_min
+
+    y_initial = [u_initial, v_initial]
+
+    # --- 4. Résoudre l'IVP
+    eta_span = [eta_min, 10.0]  # Intégrer jusqu'à un rayon max suffisant
+    sol = solve_ivp(
+        chandrasekhar_ode,
+        eta_span,
+        y_initial,
+        args=(y_0,),
+        events=surface_event,
+        dense_output=True,
+        method="RK45",
+    )
+
+    eta_s = sol.t_events[0][0]
+    num_points = 100
+    eta_discrete = np.linspace(sol.t[0], eta_s, num_points)[:-1]
+    Phi_discrete = sol.sol(eta_discrete)[0, :]
+
+    # C1 = (8 * np.pi * m_e**3 * c**3 * m_p * mu) / (3 * h**3)
+
+    # C2 = (np.pi * m_e**4 * c**5) / (3 * h**3) = BETA
+    # r_a = np.sqrt(2 * C2 / (np.pi * G)) / (C1 * y_0)
+    # rho_0 = C1 * np.pow(y_0 - 1, 1.5)
+
+    C1 = 981.0189489250643e6  # *mu_e
+    RA = 0.02439045021149552 * 10 ** (8.5)  # /mu_e
+
+    R = RA * eta_discrete / (y_0 * mu_e)
+    RHO = C1 * mu_e * ((y_0 * Phi_discrete) ** 2 - 1) ** (1.5)
+
+    print(R.shape, RHO.shape)
+
+    return R / unit.to("metre"), RHO / unitsystem.density(unit)
+
+
+def get_fermi_pressure_sound(rho, fermi_params, unit):
+    """
+    get_fermi_pressure_sound
+    Returns a function that take rho in system unit and return (P, cs) in system units
+
+    :param eos: eos dict
+    :param unit: Shamrock unit
+    """
+    mu_e = fermi_params["mu_e"]
+
+    length = unit.to("metre")
+    density = unitsystem.density(unit)
+    velocity = unitsystem.speed(unit)
+    pressure = unitsystem.pressure(unit)
+    return [
+        su.P_fermi(rho * density, mu_e) / pressure,
+        su.cs_fermi(rho * density, mu_e) / velocity,
+    ]
+
+    # return P_fermi, cs_fermi
+    # elif eos["name"] == "polytropic":
+    #     K = eos["values"]["K"]
+    #     gamma = 1 + 1 / eos["values"]["n"]
+    #     return lambda rho: [
+    #         P_polytropic(rho * density, K, gamma) / pressure,
+    #         cs_polytropic(rho * density, K, gamma) / velocity,
+    #     ]
+
+
 if __name__ == "__main__":
     import unitsystem
 
@@ -552,38 +675,26 @@ if __name__ == "__main__":
     mtot_array = []
     rmax_array = []
     for i, rhocenter in enumerate(rhocenter_array):
-        tabx, tabrho = solve_hydrostatic_tillotson(
-            kwargs_tillotson, rhocenter, T=0, unit=siunit
-        )
+        tabx, tabrho = solve_hydrostatic_tillotson(kwargs_tillotson, rhocenter, T=0, unit=siunit)
         mtot = su.integrate_target([tabx, tabrho])
         rmax = np.max(tabx[tabrho > 10])
         mtot_array.append(mtot)
         rmax_array.append(rmax)
 
         if i % 3 == 0:
-            line = axmass["profile"].plot(tabx, tabrho, label=f"{rhocenter/rho0:.1f}")[
-                0
-            ]
-            axmass["profile"].axvline(
-                x=rmax, ls="--", alpha=0.4, color=line.get_color()
-            )
+            line = axmass["profile"].plot(tabx, tabrho, label=f"{rhocenter/rho0:.1f}")[0]
+            axmass["profile"].axvline(x=rmax, ls="--", alpha=0.4, color=line.get_color())
 
     axmass["profile"].set_ylabel(r"$\rho$")
-    axmass["profile"].set_title(
-        r"Density profile for different $\rho_{\rm center}/\rho_0$"
-    )
+    axmass["profile"].set_title(r"Density profile for different $\rho_{\rm center}/\rho_0$")
     axmass["m"].plot(rhocenter_array / rho0, mtot_array)
-    axmass["m"].axhline(
-        y=siunit.Mearth, color="blue", ls="--", alpha=0.5, label="Earth"
-    )
+    axmass["m"].axhline(y=siunit.Mearth, color="blue", ls="--", alpha=0.5, label="Earth")
     axmass["m"].axhline(y=siunit.Mmoon, color="black", ls="--", alpha=0.5, label="Moon")
     axmass["m"].set_ylabel(r"$M_{\rm tot}$")
     axmass["m"].set_title(r"Total mass evolution with $\rho_{\rm center}/\rho_0$")
 
     axmass["r"].plot(rhocenter_array / rho0, rmax_array)
-    axmass["r"].axhline(
-        y=siunit.Rearth, color="blue", ls="--", alpha=0.5, label="Earth"
-    )
+    axmass["r"].axhline(y=siunit.Rearth, color="blue", ls="--", alpha=0.5, label="Earth")
     axmass["r"].axhline(y=siunit.Rmoon, color="black", ls="--", alpha=0.5, label="Moon")
     axmass["r"].set_ylabel(r"$R_{\rm max}$")
     axmass["r"].set_title(r"Planet radius evolution with $\rho/\rho_0$ (RK45)")

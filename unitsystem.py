@@ -23,6 +23,13 @@ def speed(unit):
     return l / s
 
 
+def pressure(unit):
+    m = unit.to("kilogram")
+    l = unit.to("metre")
+    s = unit.to("second")
+    return m / l / (s**2)
+
+
 class Unitsystem:
 
     def __init__(self, unit_name="earth"):
