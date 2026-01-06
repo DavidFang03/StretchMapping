@@ -105,9 +105,7 @@ def gen_new_path_withoutext(dump_prefix):
     return path_withoutext
 
 
-def handle_dump(
-    script_file, *, dump_prefix=None, folder_path=None, clear=True, onlyext=""
-):
+def handle_dump(script_file, *, dump_prefix=None, folder_path=None, clear=True, onlyext=""):
     """
     Only kwargs.
     If dump_prefix is given : remove the content of the last folder or creates new folder
@@ -116,7 +114,7 @@ def handle_dump(
     :param dump_prefix: Description
     :param folder_name: Description
     :param overwrite: Description
-    :param onlyext: Description
+    :param onlyext: ".png" for example
     """
     import os
     import glob

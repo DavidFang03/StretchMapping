@@ -1,7 +1,6 @@
 import shamrock
 
 if not shamrock.sys.is_initialized():
-    print("coucou")
     shamrock.change_loglevel(1)
     shamrock.sys.init("0:0")
 
@@ -10,10 +9,7 @@ import sham_utilities as shu
 import stretchmap_utilities as stu
 import hydrostatic as hy
 import unitsystem
-import matplotlib.pyplot as plt
 
-# import vtkmodules.vtkRenderingFreeType
-# import vtkmodules.vtkRenderingMatplotlib
 import pyvista as pv
 import gc
 
@@ -30,7 +26,13 @@ pv.global_theme.font.color = color_text
 
 shamrock.enable_experimental_features()
 
-style_target = "dashed"
+all_possible_tasks = [
+    "density",
+    "energy",
+    "pressure",
+    "soundspeed",
+    "cold_energy",
+]
 # colors = {
 # "density": "blue",
 # "energy": "orange",
@@ -52,13 +54,9 @@ colors = {
 #     "soundspeed": "m--",
 #     "cold_energy": "r--",
 # }
-fmts = {
-    "density": f"{colors['density']}--",
-    "energy": f"{colors['energy']}--",
-    "pressure": f"{colors['pressure']}--",
-    "soundspeed": f"{colors['soundspeed']}--",
-    "cold_energy": f"{colors['cold_energy']}--",
-}
+line_kwargs = {}  # for target lines
+for task in all_possible_tasks:
+    line_kwargs[task] = {"color": colors[task], "style": "--", "width": 4}
 
 ids = {
     "density": "rho",
@@ -75,99 +73,137 @@ symbols = {
     "cold_energy": r"$u_c$",
 }
 
+background_color = "#e4e8f1"
+border_color = "#57606f"
+
+some_visual_params = {}
+some_visual_params["tillotson"] = {
+    "cmap": "cool",
+    "bounds": [-3, 3, -3, 3, -3, 3],
+    "camera_position": (-10, 10, 10),
+    "mesh_opacity": 0.7,
+}
+some_visual_params["fermi"] = {
+    "cmap": "blues",
+    "bounds": [-0.01, 0.01, -0.01, 0.01, -0.01, 0.01],
+    "camera_position": (-0.02, 0.02, 0.02),
+    "mesh_opacity": 0.7,
+}
+some_visual_params["polytropic"] = {
+    "cmap": "reds",
+    "bounds": [-1, 1, -1, 1, -1, 1],
+    "camera_position": (-4, 4, 4),
+    "mesh_opacity": 0.7,
+}
 
 Tillotson_parameters_Fe = hy.Tillotson_parameters_Fe
-
 Tillotson_parameters_Granite = hy.Tillotson_parameters_Granite
 
 
+class Tseries:
+    def __init__(self, title, function, id, color="black"):
+        self.title = title
+        self.function = function
+        self.id = id
+        self.tdata = []
+        self.ydata = []
+        self.color = color
+
+    # def add_data(self, t, ):
+
+
 class ShamPlot:
-    def __init__(self, model, ctx, tasks, balls=[]):
+    def __init__(self, model, ctx, tasks, tseries=[], balls=[]):
         self.ctx = ctx
         self.model = model
         self.balls = balls
+        self.eos = self.balls[0].eos
 
         self.tasks = tasks
+        self.tseries = tseries
 
-        self.subplot_nbs = {
-            "density": 0,
-            "energy": 1,
-            "soundspeed": 2,
-            "pressure": 3,
-            "cold_energy": 4,
-            "mesh": 5,
-        }
+        self.subplot_nbs = {}
+        self.graphs = {}
+        self.charts = {}
 
-        self.graphs = {
-            "density": None,
-            "energy": None,
-            "soundspeed": None,
-            "pressure": None,
-            "cold_energy": None,
-        }
+        for i, task in enumerate(tasks):
+            self.graphs[task] = None
+            self.charts[task] = None
+            self.subplot_nbs[task] = i
+        for i, tserie in enumerate(tseries):
+            self.graphs[tserie.id] = None
+            self.charts[tserie.id] = None
+            self.subplot_nbs[tserie.id] = i + 1 + len(self.tasks)
 
-        self.charts = {
-            "density": None,
-            "energy": None,
-            "soundspeed": None,
-            "pressure": None,
-            "cold_energy": None,
-        }
+        self.subplot_nbs["mesh"] = len(self.tasks) + 1 + len(self.tseries)
+
+        console.print("The plot will look like this: ", self.subplot_nbs)
 
         self.first_pvplot()
 
     def first_pvplot(self):
-        tasks_nb = 5
-        # tasks_nb = len(self.tasks) # TODO doesn't work
+
+        rows_nb = self.subplot_nbs["mesh"]  # TODO doesn't work
         self.update_data()
+
         self.plotter = pv.Plotter(
-            shape=f"{tasks_nb}|1",
+            shape=f"{rows_nb}|1",
             splitting_position=0.4375,
             window_size=(960, 540),
             off_screen=True,
         )
 
-        for i, quantity in enumerate(self.tasks):
-            id = ids[quantity]
-            pv_color = pv.Color(colors[quantity], opacity=0.5)
+        for task in self.tasks:
+            i = self.subplot_nbs[task]
+            id = ids[task]
+            pv_color = pv.Color(colors[task], opacity=0.5)
             self.plotter.subplot(i)
             chart = pv.Chart2D()
-            self.graphs[quantity] = chart.scatter(
+            self.graphs[task] = chart.scatter(
                 self.data_sham["r"], self.data_sham[id], color=pv_color, size=5
             )
-            if len(self.balls) > 0:
-                chart.plot(
-                    self.balls[0].data["r"],
-                    self.balls[0].data[quantity],
-                    fmt=fmts[quantity],
-                )
+            chart.line(self.balls[0].data["r"], self.balls[0].data[task], **line_kwargs[task])
+
             self.plotter.add_chart(chart)
-            if i < 3:
-                chart.x_axis.toggle()
-                chart.x_axis.ticks_visible = False
-                chart.x_axis.tick_labels_visible = False
-                chart.x_label = ""
-            else:
-                chart.x_label = r"$r$"
-            chart.title = quantity
+            chart.title = task
+            chart.x_label = "r"
             chart.y_label = id
+            chart.background_color = background_color
+            chart.border_color = border_color
+            self.charts[task] = chart
 
-            chart.background_color = "#2f3542"
-            chart.border_color = "#57606f"
+        for tserie in self.tseries:
+            i = self.subplot_nbs[tserie.id]
+            self.plotter.subplot(i)
+            chart = pv.Chart2D()
+            self.graphs[tserie.id] = chart.scatter(
+                [tserie.tdata[-1]], [tserie.ydata[-1]], color=tserie.color, size=10
+            )
+            chart.line(tserie.tdata, tserie.ydata, color=tserie.color)
 
-            self.charts[quantity] = chart
+            self.plotter.add_chart(chart)
+            chart.title = tserie.title
+            chart.x_label = "t"
+            chart.y_label = tserie.id
+            chart.background_color = background_color
+            chart.border_color = border_color
+            self.charts[tserie.id] = chart
 
         self.plotter.subplot(self.subplot_nbs["mesh"])
         point_cloud = pv.PolyData(self.data_sham["xyz"])
-        point_cloud[r"\rho"] = self.data_sham["rho"]
+        point_cloud["Density"] = self.data_sham["rho"]
         self.mesh_actor = self.plotter.add_mesh(
             point_cloud,
-            cmap="cool",
+            cmap=some_visual_params[self.eos.id]["cmap"],
             render_points_as_spheres=True,
+            # style="points_gaussian",
+            # emissive=True,
+            clim=[6e4, 1e8],
             point_size=5.0,
+            opacity=some_visual_params[self.eos.id]["mesh_opacity"],
         )
         self.plotter.show_bounds(
-            bounds=[-0.01, 0.01, -0.01, 0.01, -0.01, 0.01],
+            bounds=some_visual_params[self.eos.id]["bounds"],
             grid="back",
             location="outer",
             ticks="both",
@@ -175,15 +211,17 @@ class ShamPlot:
             n_ylabels=2,
             n_zlabels=2,
         )
-        self.plotter.camera.position = (-0.02, 0.02, 0.02)
+        self.plotter.camera.position = some_visual_params[self.eos.id]["camera_position"]
         self.update_time()
 
     def update_data(self):
         data_sham = self.ctx.collect_data()
+
         data_sham["r"] = np.linalg.norm(data_sham["xyz"], axis=1)
         data_sham["rho"] = (
             self.model.get_particle_mass() * (self.model.get_hfact() / data_sham["hpart"]) ** 3
         )
+
         if "cold_energy" in self.tasks:
             data_sham["u_c"] = hy.get_cold_energy(
                 data_sham["rho"],
@@ -192,6 +230,12 @@ class ShamPlot:
             )
 
         self.data_sham = data_sham
+
+        t = self.model.get_time()
+        for tserie in self.tseries:
+            y = tserie.function(data_sham)
+            tserie.tdata.append(t)
+            tserie.ydata.append(y)
 
     def update_time(self):
         self.plotter.subplot(self.subplot_nbs["mesh"])
@@ -208,19 +252,29 @@ class ShamPlot:
 
         gc.collect()
         # self.chart.clear()
-        for i, quantity in enumerate(self.tasks):
+        for task in self.tasks:
+            i = self.subplot_nbs[task]
             self.plotter.subplot(i)
-            chart = self.charts[quantity]
-            id = ids[quantity]
+            chart = self.charts[task]
+            id = ids[task]
             chart.clear()
-            pv_color = pv.Color(colors[quantity], opacity=0.5)
-            self.graphs[quantity] = chart.scatter(
+            pv_color = pv.Color(colors[task], opacity=0.5)
+            self.graphs[task] = chart.scatter(
                 self.data_sham["r"], self.data_sham[id], color=pv_color, size=5
             )
-            # self.graphs[quantity].update(data["r"], data[ids[quantity]])
-            # self.charts[quantity].toggle()
+            chart.line(self.balls[0].data["r"], self.balls[0].data[task], **line_kwargs[task])
 
-        self.plotter.subplot(i + 1)
+        for tserie in self.tseries:
+            i = self.subplot_nbs[tserie.id]
+            self.plotter.subplot(i)
+            chart = self.charts[tserie.id]
+            chart.clear()
+            self.graphs[tserie.id] = chart.scatter(
+                [tserie.tdata[-1]], [tserie.ydata[-1]], color=tserie.color, size=10
+            )
+            chart.line(tserie.tdata, tserie.ydata, color=tserie.color)
+
+        self.plotter.subplot(self.subplot_nbs["mesh"])
         new_cloud = pv.PolyData(self.data_sham["xyz"])
         new_cloud[r"$\\rho$"] = self.data_sham["rho"]
         self.mesh_actor.mapper.SetInputData(new_cloud)
@@ -252,6 +306,8 @@ class EoS:
             self.setup_Tillotson_EoS()
         elif id == "fermi":
             self.setup_Fermi_EoS()
+        elif id == "polytropic":
+            self.setup_polytropic_EoS()
         else:
             raise NotImplementedError()
 
@@ -270,6 +326,11 @@ class EoS:
         mu_e = self.details["mu_e"]
         self.params = {"mu_e": mu_e}
 
+    def setup_polytropic_EoS(self):
+        k = self.details["k"]
+        gamma = self.details["gamma"]
+        self.params = {"k": k, "gamma": gamma}
+
     def solve_hydrostatic(self, values):
         """
         must return tabx, tabrho
@@ -282,6 +343,10 @@ class EoS:
             y_0 = values["y_0"]
             mu_e = self.details["mu_e"]
             tabx, tabrho = hy.solve_Chandrasekhar(mu_e, y_0, self.unit)
+        elif self.id == "polytropic":
+            r_0 = values["r_0"]
+            tabx = np.linspace(0, r_0)[1:-1]
+            tabrho = np.sinc(tabx / r_0)  # crossing fingers tthat n=1
         return tabx, tabrho
 
     def get_p_and_cs(self, rho, u_int):
@@ -289,6 +354,12 @@ class EoS:
             return hy.get_tillotson_pressure_sound(rho, u_int, self.params, self.unit)
         elif self.id == "fermi":
             return hy.get_fermi_pressure_sound(rho, self.params, self.unit)
+        elif self.id == "polytropic":
+            k = self.details["k"]
+            gamma = self.details["gamma"]
+            p = k * (rho**gamma)
+            cs = gamma * p / rho
+            return p, cs
 
     def tojson(self):
         def format_dict(dict):
@@ -385,7 +456,18 @@ class Ball:
 
 
 class Setup:
-    def __init__(self, SG, balls, nb_dumps, tf, clear):
+    def __init__(self, SG, balls, nb_dumps, tf, clear, tasks, tseries=[]):
+        """
+        Docstring for __init__
+
+        :param self: Description
+        :param SG: Description
+        :param balls: Description
+        :param nb_dumps: Description
+        :param tf: Description
+        :param clear: Description
+        :param tseries: a list of Tseries instances. They contain functions that all take shamrock data as input and return a float. This scalar will be stored at each timestep and plot
+        """
         self.SG = SG
 
         self.balls = balls
@@ -395,21 +477,25 @@ class Setup:
         self.fig = None
         self.nb_dumps = nb_dumps
         self.tf = tf
+        self.clear = clear
+        self.tseries = tseries
+        self.tasks = tasks
 
+        self.init_model()
+
+        self.dump_prefix = self.gen_dump_prefix()
+        self.eps_plummer = self.get_eps_plummer()
+
+        if self.eos.id == "tillotson":
+            self.tasks.append("cold_energy")
+
+    def init_model(self):
         self.ctx = shamrock.Context()
         self.ctx.pdata_layout_new()
         self.model = shamrock.get_Model_SPH(context=self.ctx, vector_type="f64_3", sph_kernel="M4")
         self.cfg = self.model.gen_default_config()
 
-        self.eps_plummer = self.get_eps_plummer()
-
-        self.dump_prefix = self.gen_dump_prefix()
-        self.folder_path = shu.handle_dump(__file__, dump_prefix=self.dump_prefix, clear=clear)
-        self.write_json_params()
-
-        self.init_model()
-
-    def init_model(self):
+    def setup_model(self):
         """
         Roadmap:
             - initialize, ctx, model (kernel), cfg (solver config)
@@ -444,14 +530,14 @@ class Setup:
             raise NotImplementedError()
         self.cfg.set_softening_plummer(epsilon=self.eps_plummer)
 
-        # // if self.eos.id == "fermi":
-        # // self.cfg.set_eos_fermi(**self.eos.params)
         # // elif self.eos.id == "polytropic":
         # // self.cfg.set_eos_polytropic(**self.params)
         if self.eos.id == "tillotson":
             self.cfg.set_eos_tillotson(**self.eos.params)
         elif self.eos.id == "fermi":
             self.cfg.set_eos_fermi(**self.eos.params)
+        elif self.eos.id == "polytropic":
+            self.cfg.set_eos_polytropic(*self.eos.params.values())
         else:
             raise NotImplementedError()
         # _______________________________________________________________________________
@@ -469,13 +555,11 @@ class Setup:
         # _______________________________________________________________________________
 
         self.model.set_solver_config(self.cfg)
-        self.model.init_scheduler(int(1e7), 1)
-
         # -------------------------------------------------------------------------------
         # resize simulation box ---------------------------------------------------------
 
+        self.model.init_scheduler(int(1e7), 1)  # before resizing
         self.model.resize_simulation_box(sbmin, sbmax)
-        # TODO Probably will have to add a kill sphere
 
         # _______________________________________________________________________________
 
@@ -496,7 +580,7 @@ class Setup:
             mpart_target = ball.mtot_target / (ball.N_target / 2)  # masse par particule
             hmin = hfact * (mpart_target / np.max(ball.data["density"])) ** (1.0 / 3.0)
             if eps_plummer > hmin:
-                eps_plummer = hmin  # h min à peu près
+                eps_plummer = hmin
         return eps_plummer
 
     def add_balls(self):
@@ -529,7 +613,6 @@ class Setup:
                 x, y, z = pt
                 return (x**2 + y**2 + z**2) < ball.xmax * ball.xmax
 
-            print(ball.xmax)
             cropped_stretched_hcp = setup.make_modifier_filter(
                 parent=stretched_hcp, filter=is_in_sphere
             )
@@ -548,7 +631,7 @@ class Setup:
         dump_prefix += f"{self.eos.id}_"
         dump_prefix += f"{int(self.balls[0].N_target/1000)}k_"
         dump_prefix += f"{self.SG}_"
-        dump_prefix += "cd10_uc_skewv3_"
+        dump_prefix += "cd10_"
         return dump_prefix
 
     def get_free_fall_time(self):
@@ -571,8 +654,6 @@ class Setup:
         self.model.dump(dump_path)
         console.print(f"Dumped {dump_path}")
 
-        #     mesh_actor.mapper.SetInputData(new_cloud) pour update
-
     def ready_set_go(self):
         """
         Roadmap:
@@ -580,11 +661,10 @@ class Setup:
             - One timestep with dt=0
             - # ?Rescale stretchmapping? Idk how to do it if there are multiple balls.
         """
-        tasks = ["density", "energy", "soundspeed", "pressure"]
-        if self.eos.id == "tillotson":
-            tasks.append("cold_energy")
-        self.tasks = tasks
-        self.plot = ShamPlot(self.model, self.ctx, tasks, self.balls)
+        self.setup_model()
+        self.plot = ShamPlot(self.model, self.ctx, self.tasks, self.tseries, self.balls)
+
+        self.folder_path = shu.handle_dump(__file__, dump_prefix=self.dump_prefix, clear=self.clear)
 
         newpath_withoutext = shu.gen_new_path_withoutext(self.dump_prefix)
         dump_path = f"{newpath_withoutext}.sham"
@@ -606,6 +686,7 @@ class Setup:
         console.print("Dump success: ready to smash balls")
 
     def loop(self, t_stops):
+        self.write_json_params()
         if not self.ready_toloop:
             raise Exception("Setup is not ready")
         for i, t in enumerate(t_stops):
@@ -619,6 +700,25 @@ class Setup:
             img_path = f"{newpath_withoutext}.png"
             self.dump(dump_path=dump_path)  # **BEFORE** plotting
             self.plot.update_pvplot()
+            self.plot.screenshot(img_path)
+
+    def replay(self):
+        import glob
+
+        self.folder_path = shu.handle_dump(
+            __file__, dump_prefix=self.dump_prefix, clear=True, onlyext=".png"
+        )
+
+        dumps_list = glob.glob(f"{self.folder_path}/*.sham")
+        # self.model.load_from_dump(dumps_list[0])
+        # self.plot = ShamPlot(self.model, self.ctx, self.tasks, self.balls)
+
+        for sham_dump in dumps_list:
+            self.init_model()
+            console.print(f"loading dump {sham_dump}")
+            img_path = sham_dump.replace(".sham", ".png")
+            self.model.load_from_dump(sham_dump)
+            self.plot = ShamPlot(self.model, self.ctx, self.tasks, self.tseries, self.balls)
             self.plot.screenshot(img_path)
 
     def write_json_params(self):
@@ -704,24 +804,52 @@ if __name__ == "__main__":
     # )
 
     # balls.append(theia)
-    eos = EoS(id="fermi", details={"mu_e": 2}, unit=code_unit)
-    fermi_ball = Ball(
+    # eos = EoS(id="fermi", details={"mu_e": 2}, unit=code_unit)
+    # fermi_ball = Ball(
+    #     center=[0, 0, 0],
+    #     v_xyz=[0, 0, 0],
+    #     N_target=2e5,
+    #     eos=eos,
+    #     input_values={"y_0": 5},
+    #     unit=code_unit,
+    #     rescale=1.05,
+    # )
+    # balls.append(fermi_ball)
+
+    eos = EoS(id="polytropic", details={"k": 1, "gamma": 2}, unit=code_unit)
+    polytropic_ball = Ball(
         center=[0, 0, 0],
         v_xyz=[0, 0, 0],
-        N_target=2e5,
+        N_target=5e2,
         eos=eos,
-        input_values={"y_0": 5},
+        input_values={"r_0": 1},
         unit=code_unit,
         rescale=1.05,
     )
-    balls.append(fermi_ball)
+    balls.append(polytropic_ball)
 
     #!####################################
 
-    nb_dumps = 20
-    tf_cl = 4  # durée de la run en temps de chute libre (environ)
+    nb_dumps = 200
+
+    tf_cl = 12  # durée de la run en temps de chute libre (environ)
     #! #####################################
-    setup = Setup(SG="mm", balls=balls, nb_dumps=nb_dumps, tf=tf_cl, clear=True)
+    tserie_rhoMean = Tseries(
+        title="Mean density", function=lambda data: np.mean(data["rho"]), id="rho_mean"
+    )
+
+    tasks = ["density", "pressure"]
+    # tasks = ["density", "energy", "soundspeed", "pressure"]
+
+    setup = Setup(
+        SG="mm",
+        balls=balls,
+        nb_dumps=nb_dumps,
+        tf=tf_cl,
+        clear=True,
+        tasks=tasks,
+        tseries=[tserie_rhoMean],
+    )
 
     tcl = setup.get_free_fall_time()
     tf = tf_cl * tcl
@@ -729,6 +857,7 @@ if __name__ == "__main__":
     setup.ready_set_go()
     console.print(t_stops)
     setup.loop(t_stops)
+    # setup.replay()
     setup.movie()
 
 # ./shamrock --sycl-cfg 0:0 --loglevel 1 --rscript ./balls.py
