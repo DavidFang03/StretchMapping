@@ -6,6 +6,9 @@ fs = 24
 fs_box = 24
 plt.rcParams.update({"text.usetex": True, "font.family": "Helvetica", "font.size": fs})
 
+blue = "#74b9ff"
+red = "#ff7675"
+
 
 def phase_diagram():
     # --- Paramètres de configuration ---
@@ -20,6 +23,7 @@ def phase_diagram():
     # Création de la figure
     fig, ax = plt.subplots(figsize=(14, 10))  # Format large pour placer les équations
 
+    ax.fill_between([0, max_rho], 0, max_u, color="white", alpha=1)
     # --- Définition des zones (remplissage couleur) ---
 
     # 1. Région Compressée (rho >= rho0)
@@ -59,15 +63,13 @@ def phase_diagram():
     # ax.axvline(x=rhoiv, color="black", linestyle="-", linewidth=2)
     ax.axvline(x=rho0, ymax=u_iv / max_u, color="black", linestyle="--", linewidth=0.5)
     ax.axvline(x=rho0, ymin=u_iv / max_u, color="black", linestyle="-", linewidth=3)
-    ax.axhline(y=u_iv, xmax=rho0 / max_rho, color="blue", linestyle="--", linewidth=1.5)
-    ax.axhline(y=u_cv, xmax=rho0 / max_rho, color="red", linestyle="--", linewidth=1.5)
+    ax.axhline(y=u_iv, xmax=rho0 / max_rho, color=blue, linestyle="--", linewidth=1.5)
+    ax.axhline(y=u_cv, xmax=rho0 / max_rho, color=red, linestyle="--", linewidth=1.5)
 
     # --- Ajout des Équations (LaTeX) ---
 
     # Style de base pour les boîtes de texte
-    props = dict(
-        boxstyle="round", facecolor="white", alpha=0.0, edgecolor="gray", pad=1
-    )
+    props = dict(boxstyle="round", facecolor="white", alpha=0.0, edgecolor="gray", pad=1)
 
     # EQ 1: Compressé
     eq_1 = (
@@ -157,18 +159,23 @@ def phase_diagram():
     # --- Mise en forme des axes ---
     ax.set_xlim(0, max_rho)
     ax.set_ylim(0, max_u)
-    ax.set_xlabel(r"Density $\rho$", fontsize=fs)
-    ax.set_ylabel(r"Internal energy $u$", fontsize=fs)
+    ax.set_xlabel(r"Density $\rho$", fontsize=fs, color="white")
+    ax.set_ylabel(r"Internal energy $u$", fontsize=fs, color="white")
+    # ax.spines["bottom"].set_color("white")
+    # ax.spines["left"].set_color("white")
+    ax.tick_params(axis="x", colors="white")
+
     # ax.tick_params(axis="y", which="major", pad=30)
     ax.xaxis.labelpad = 20
     ax.yaxis.labelpad = 40
-    ax.set_title(r"Phase Diagram - Tillotson EoS in Shamrock", fontsize=16, pad=20)
-    fig.suptitle("David FANG")
+    # ax.set_title(r"Phase Diagram - Tillotson EoS in Shamrock", fontsize=16, pad=20)
+    fig.suptitle(r"Phase Diagram - Tillotson EoS in Shamrock", color="white")
+    # fig.suptitle("David FANG")
 
     # Annotations sur les axes
-    ax.text(rho0, -max_u * 0.03, r"$\rho_0$", ha="center", fontsize=fs, color="black")
-    ax.text(-max_rho * 0.04, u_iv, r"$u_{iv}$", va="center", fontsize=fs, color="blue")
-    ax.text(-max_rho * 0.04, u_cv, r"$u_{cv}$", va="center", fontsize=fs, color="red")
+    ax.text(rho0, -max_u * 0.03, r"$\rho_0$", ha="center", fontsize=fs, color="white")
+    ax.text(-max_rho * 0.04, u_iv, r"$u_{iv}$", va="center", fontsize=fs, color=blue)
+    ax.text(-max_rho * 0.04, u_cv, r"$u_{cv}$", va="center", fontsize=fs, color=red)
     # ax.text(0, 0, r"$0$", va="center", fontsize=fs, color="black")
 
     ax.set_xticks([])
@@ -200,7 +207,7 @@ def P_of_rho(kwargs):
 if __name__ == "__main__":
 
     fig = phase_diagram()
-    fig.savefig("tillotson_preview.png")
+    fig.savefig("tillotson_preview.png", transparent=True)
     # from hydrostatic import Tillotson_parameters_Granite
     # fig_Prho = P_of_rho(Tillotson_parameters_Granite)
     # plt.show()

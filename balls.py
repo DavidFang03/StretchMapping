@@ -10,7 +10,10 @@ import stretchmap_utilities as stu
 import hydrostatic as hy
 import unitsystem
 
+import vtkmodules.vtkRenderingFreeType
+import vtkmodules.vtkRenderingMatplotlib
 import pyvista as pv
+
 import gc
 
 from rich.console import Console
@@ -22,7 +25,10 @@ color_text = "black"
 pv.set_plot_theme("dark")
 color_text = "white"
 pv.global_theme.font.color = color_text
+# pv.global_theme.font.family = "times" # doesn't affect 2d charts....
+# pv.global_theme.colorbar_orientation = "vertical"
 
+print(shamrock.sys.world_rank())
 
 shamrock.enable_experimental_features()
 
@@ -81,19 +87,22 @@ some_visual_params["tillotson"] = {
     "cmap": "cool",
     "bounds": [-3, 3, -3, 3, -3, 3],
     "camera_position": (-10, 10, 10),
-    "mesh_opacity": 0.7,
+    "mesh_opacity": 0.97,
+    "bsize": 10,
 }
 some_visual_params["fermi"] = {
     "cmap": "blues",
     "bounds": [-0.01, 0.01, -0.01, 0.01, -0.01, 0.01],
     "camera_position": (-0.02, 0.02, 0.02),
     "mesh_opacity": 0.7,
+    "bsize": 0.1,
 }
 some_visual_params["polytropic"] = {
-    "cmap": "reds",
+    "cmap": "Reds_r",
     "bounds": [-1, 1, -1, 1, -1, 1],
     "camera_position": (-4, 4, 4),
     "mesh_opacity": 0.7,
+    "bsize": 1.5,
 }
 
 Tillotson_parameters_Fe = hy.Tillotson_parameters_Fe
@@ -101,10 +110,10 @@ Tillotson_parameters_Granite = hy.Tillotson_parameters_Granite
 
 
 class Tseries:
-    def __init__(self, title, function, id, color="black"):
+    def __init__(self, title, function, symbol, color="black"):
         self.title = title
         self.function = function
-        self.id = id
+        self.symbol = symbol
         self.tdata = []
         self.ydata = []
         self.color = color
@@ -113,7 +122,7 @@ class Tseries:
 
 
 class ShamPlot:
-    def __init__(self, model, ctx, tasks, tseries=[], balls=[]):
+    def __init__(self, model, ctx, tasks, tseries=[], balls=[], tf=10, clim=None):
         self.ctx = ctx
         self.model = model
         self.balls = balls
@@ -121,21 +130,27 @@ class ShamPlot:
 
         self.tasks = tasks
         self.tseries = tseries
+        self.tf = tf
+
+        self.clim = clim
 
         self.subplot_nbs = {}
         self.graphs = {}
         self.charts = {}
+
+        if len(self.tseries) == 0:
+            space = 0
 
         for i, task in enumerate(tasks):
             self.graphs[task] = None
             self.charts[task] = None
             self.subplot_nbs[task] = i
         for i, tserie in enumerate(tseries):
-            self.graphs[tserie.id] = None
-            self.charts[tserie.id] = None
-            self.subplot_nbs[tserie.id] = i + 1 + len(self.tasks)
+            self.graphs[tserie.title] = None
+            self.charts[tserie.title] = None
+            self.subplot_nbs[tserie.title] = i + space + len(self.tasks)
 
-        self.subplot_nbs["mesh"] = len(self.tasks) + 1 + len(self.tseries)
+        self.subplot_nbs["mesh"] = len(self.tasks) + space + len(self.tseries)
 
         console.print("The plot will look like this: ", self.subplot_nbs)
 
@@ -156,6 +171,7 @@ class ShamPlot:
         for task in self.tasks:
             i = self.subplot_nbs[task]
             id = ids[task]
+            symbol = symbols[task]
             pv_color = pv.Color(colors[task], opacity=0.5)
             self.plotter.subplot(i)
             chart = pv.Chart2D()
@@ -167,38 +183,43 @@ class ShamPlot:
             self.plotter.add_chart(chart)
             chart.title = task
             chart.x_label = "r"
-            chart.y_label = id
+            chart.y_label = symbol
             chart.background_color = background_color
             chart.border_color = border_color
             self.charts[task] = chart
 
         for tserie in self.tseries:
-            i = self.subplot_nbs[tserie.id]
+            i = self.subplot_nbs[tserie.title]
             self.plotter.subplot(i)
             chart = pv.Chart2D()
-            self.graphs[tserie.id] = chart.scatter(
+            self.graphs[tserie.title] = chart.scatter(
                 [tserie.tdata[-1]], [tserie.ydata[-1]], color=tserie.color, size=10
             )
-            chart.line(tserie.tdata, tserie.ydata, color=tserie.color)
+            chart.scatter(tserie.tdata, tserie.ydata, color=tserie.color, style="x")
 
             self.plotter.add_chart(chart)
             chart.title = tserie.title
-            chart.x_label = "t"
-            chart.y_label = tserie.id
+            chart.x_label = r"$t$"
+            chart.y_label = tserie.symbol
+            # tmax = tserie.tdata[-1] if tserie.tdata[-1] > 0 else 1
+            tmax = self.tf
+            ymax = np.max(tserie.ydata)
+            chart.x_range = [0, 1.05 * tmax]
+            chart.y_range = [0, 1.05 * ymax]
             chart.background_color = background_color
             chart.border_color = border_color
-            self.charts[tserie.id] = chart
+            self.charts[tserie.title] = chart
 
         self.plotter.subplot(self.subplot_nbs["mesh"])
         point_cloud = pv.PolyData(self.data_sham["xyz"])
-        point_cloud["Density"] = self.data_sham["rho"]
+        point_cloud[r"$\rho$"] = self.data_sham["rho"]
         self.mesh_actor = self.plotter.add_mesh(
             point_cloud,
             cmap=some_visual_params[self.eos.id]["cmap"],
             render_points_as_spheres=True,
             # style="points_gaussian",
             # emissive=True,
-            clim=[6e4, 1e8],
+            clim=self.clim,
             point_size=5.0,
             opacity=some_visual_params[self.eos.id]["mesh_opacity"],
         )
@@ -241,8 +262,10 @@ class ShamPlot:
         self.plotter.subplot(self.subplot_nbs["mesh"])
         if "timetext" in self.plotter.actors:
             self.plotter.remove_actor("timetext")
+        t = self.model.get_time()
+        dt = self.model.get_dt()
         self.plotter.add_text(
-            "t = {:.1e} dt = {:.1e}".format(self.model.get_time(), self.model.get_dt()),
+            rf"$t = {t:.1e} \, \mathrm{{d}} t = {dt:.1e}$",
             position="upper_edge",
             name="timetext",
         )
@@ -265,14 +288,14 @@ class ShamPlot:
             chart.line(self.balls[0].data["r"], self.balls[0].data[task], **line_kwargs[task])
 
         for tserie in self.tseries:
-            i = self.subplot_nbs[tserie.id]
+            i = self.subplot_nbs[tserie.title]
             self.plotter.subplot(i)
-            chart = self.charts[tserie.id]
+            chart = self.charts[tserie.title]
             chart.clear()
-            self.graphs[tserie.id] = chart.scatter(
+            self.graphs[tserie.title] = chart.scatter(
                 [tserie.tdata[-1]], [tserie.ydata[-1]], color=tserie.color, size=10
             )
-            chart.line(tserie.tdata, tserie.ydata, color=tserie.color)
+            chart.scatter(tserie.tdata, tserie.ydata, color=tserie.color, style="x")
 
         self.plotter.subplot(self.subplot_nbs["mesh"])
         new_cloud = pv.PolyData(self.data_sham["xyz"])
@@ -343,10 +366,17 @@ class EoS:
             y_0 = values["y_0"]
             mu_e = self.details["mu_e"]
             tabx, tabrho = hy.solve_Chandrasekhar(mu_e, y_0, self.unit)
-        elif self.id == "polytropic":
-            r_0 = values["r_0"]
+        elif self.id == "polytropic":  # TODO move this part to hy.
+            import stretchmap_utilities as su
+
+            m_target = values["m_target"]  # crossing fingers that n=1
+            k = self.details["k"]  # crossing fingers that n=1
+            ucte = shamrock.Constants(self.unit)
+            G = ucte.G()
+            r_0 = np.sqrt(np.pi * k / (2 * G))  # crossing fingers that n=1
             tabx = np.linspace(0, r_0)[1:-1]
-            tabrho = np.sinc(tabx / r_0)  # crossing fingers tthat n=1
+            tabrho = np.sinc(tabx / r_0)  # crossing fingers that n=1
+            tabrho = m_target * tabrho / su.integrate_target([tabx, tabrho])
         return tabx, tabrho
 
     def get_p_and_cs(self, rho, u_int):
@@ -456,7 +486,7 @@ class Ball:
 
 
 class Setup:
-    def __init__(self, SG, balls, nb_dumps, tf, clear, tasks, tseries=[]):
+    def __init__(self, SG, balls, nb_dumps, tf_cl, clear, tasks, tseries=[]):
         """
         Docstring for __init__
 
@@ -476,7 +506,8 @@ class Setup:
         self.ready_toloop = False
         self.fig = None
         self.nb_dumps = nb_dumps
-        self.tf = tf
+        self.tf_cl = tf_cl
+        self.tf = self.tf_cl * self.get_free_fall_time()
         self.clear = clear
         self.tseries = tseries
         self.tasks = tasks
@@ -485,9 +516,6 @@ class Setup:
 
         self.dump_prefix = self.gen_dump_prefix()
         self.eps_plummer = self.get_eps_plummer()
-
-        if self.eos.id == "tillotson":
-            self.tasks.append("cold_energy")
 
     def init_model(self):
         self.ctx = shamrock.Context()
@@ -542,7 +570,7 @@ class Setup:
             raise NotImplementedError()
         # _______________________________________________________________________________
 
-        bsize = 10
+        bsize = some_visual_params[self.eos.id]["bsize"]
         sbmin = (-bsize, -bsize, -bsize)
         sbmax = (bsize, bsize, bsize)
         self.cfg.add_kill_sphere(
@@ -662,7 +690,7 @@ class Setup:
             - # ?Rescale stretchmapping? Idk how to do it if there are multiple balls.
         """
         self.setup_model()
-        self.plot = ShamPlot(self.model, self.ctx, self.tasks, self.tseries, self.balls)
+        self.plot = ShamPlot(self.model, self.ctx, self.tasks, self.tseries, self.balls, self.tf)
 
         self.folder_path = shu.handle_dump(__file__, dump_prefix=self.dump_prefix, clear=self.clear)
 
@@ -702,23 +730,29 @@ class Setup:
             self.plot.update_pvplot()
             self.plot.screenshot(img_path)
 
-    def replay(self):
+    def replay(self, clim=None, overwrite_folder=None):
         import glob
 
-        self.folder_path = shu.handle_dump(
-            __file__, dump_prefix=self.dump_prefix, clear=True, onlyext=".png"
-        )
+        if overwrite_folder is None:
+            self.folder_path = shu.handle_dump(
+                __file__, dump_prefix=self.dump_prefix, clear=True, onlyext=".png"
+            )
 
-        dumps_list = glob.glob(f"{self.folder_path}/*.sham")
+            dumps_list = sorted(glob.glob(f"{self.folder_path}/*.sham"))
+        else:
+            dumps_list = sorted(glob.glob(f"{overwrite_folder}/*.sham"))
         # self.model.load_from_dump(dumps_list[0])
-        # self.plot = ShamPlot(self.model, self.ctx, self.tasks, self.balls)
+        # self.plot = ShamPlot(self.model, self.ctx, self.tasks, self.balls, self.tf)
 
         for sham_dump in dumps_list:
+            gc.collect()
             self.init_model()
             console.print(f"loading dump {sham_dump}")
             img_path = sham_dump.replace(".sham", ".png")
             self.model.load_from_dump(sham_dump)
-            self.plot = ShamPlot(self.model, self.ctx, self.tasks, self.tseries, self.balls)
+            self.plot = ShamPlot(
+                self.model, self.ctx, self.tasks, self.tseries, self.balls, self.tf, clim
+            )
             self.plot.screenshot(img_path)
 
     def write_json_params(self):
@@ -765,45 +799,45 @@ if __name__ == "__main__":
     si = shamrock.UnitSystem()
     sicte = shamrock.Constants(si)
 
-    # code_unit = shamrock.UnitSystem(
-    #     unit_length=sicte.earth_radius(),
-    #     unit_mass=sicte.earth_mass(),
-    #     unit_time=np.sqrt(sicte.earth_radius() ** 3.0 / sicte.G() / sicte.earth_mass()),
-    # )
     code_unit = shamrock.UnitSystem(
-        unit_length=sicte.solar_radius(),
-        unit_mass=sicte.sol_mass(),
-        unit_time=np.sqrt(sicte.solar_radius() ** 3.0 / sicte.G() / sicte.sol_mass()),
+        unit_length=sicte.earth_radius(),
+        unit_mass=sicte.earth_mass(),
+        unit_time=np.sqrt(sicte.earth_radius() ** 3.0 / sicte.G() / sicte.earth_mass()),
+    )
+    # code_unit = shamrock.UnitSystem(
+    #     unit_length=sicte.solar_radius(),
+    #     unit_mass=sicte.sol_mass(),
+    #     unit_time=np.sqrt(sicte.solar_radius() ** 3.0 / sicte.G() / sicte.sol_mass()),
+    # )
+
+    eos = EoS(id="tillotson", details={"material": "Granite"}, unit=code_unit)
+    rho0 = eos.ask("rho0")
+
+    proto_earth = Ball(
+        center=[3, 0, 0],
+        v_xyz=[-0.2, 0, 0],
+        # center=[0, 0, 0],
+        # v_xyz=[0, 0, 0],
+        N_target=1e5,
+        eos=eos,
+        input_values={"rho_center": 5.0 * rho0, "u_int": 0.0},
+        unit=code_unit,
+        rescale=1.05,
     )
 
-    # eos = EoS(id="tillotson", details={"material": "Granite"}, unit=code_unit)
-    # rho0 = eos.ask("rho0")
+    balls.append(proto_earth)
 
-    # proto_earth = Ball(
-    #     center=[3, 0, 0],
-    #     v_xyz=[-0.2, 0, 0],
-    #     # center=[0, 0, 0],
-    #     # v_xyz=[0, 0, 0],
-    #     N_target=1e5,
-    #     eos=eos,
-    #     input_values={"rho_center": 5.0 * rho0, "u_int": 0.0},
-    #     unit=code_unit,
-    #     rescale=1.05,
-    # )
+    theia = Ball(
+        center=[-2, 0, 0],
+        v_xyz=[0.4, 0.1, 0],
+        N_target=1e5,
+        eos=eos,
+        input_values={"rho_center": 2 * rho0, "u_int": 0.0},
+        unit=code_unit,
+        rescale=1.05,
+    )
 
-    # balls.append(proto_earth)
-
-    # theia = Ball(
-    #     center=[-2, 0, 0],
-    #     v_xyz=[0.4, 0.1, 0],
-    #     N_target=1e5,
-    #     eos=eos,
-    #     input_values={"rho_center": 2 * rho0, "u_int": 0.0},
-    #     unit=code_unit,
-    #     rescale=1.05,
-    # )
-
-    # balls.append(theia)
+    balls.append(theia)
     # eos = EoS(id="fermi", details={"mu_e": 2}, unit=code_unit)
     # fermi_ball = Ball(
     #     center=[0, 0, 0],
@@ -816,17 +850,17 @@ if __name__ == "__main__":
     # )
     # balls.append(fermi_ball)
 
-    eos = EoS(id="polytropic", details={"k": 1, "gamma": 2}, unit=code_unit)
-    polytropic_ball = Ball(
-        center=[0, 0, 0],
-        v_xyz=[0, 0, 0],
-        N_target=5e2,
-        eos=eos,
-        input_values={"r_0": 1},
-        unit=code_unit,
-        rescale=1.05,
-    )
-    balls.append(polytropic_ball)
+    # eos = EoS(id="polytropic", details={"k": 1, "gamma": 2}, unit=code_unit)
+    # polytropic_ball = Ball(
+    #     center=[0, 0, 0],
+    #     v_xyz=[0, 0, 0],
+    #     N_target=2e5,
+    #     eos=eos,
+    #     input_values={"m_target": 1},
+    #     unit=code_unit,
+    #     rescale=1.05,
+    # )
+    # balls.append(polytropic_ball)
 
     #!####################################
 
@@ -835,29 +869,33 @@ if __name__ == "__main__":
     tf_cl = 12  # durée de la run en temps de chute libre (environ)
     #! #####################################
     tserie_rhoMean = Tseries(
-        title="Mean density", function=lambda data: np.mean(data["rho"]), id="rho_mean"
+        title="Mean density",
+        function=lambda data: np.mean(data["rho"]),
+        symbol=r"$\overline{\rho}$",
     )
 
     tasks = ["density", "pressure"]
-    # tasks = ["density", "energy", "soundspeed", "pressure"]
+    tasks = ["density", "energy", "soundspeed", "pressure", "cold_energy"]
 
     setup = Setup(
         SG="mm",
         balls=balls,
         nb_dumps=nb_dumps,
-        tf=tf_cl,
+        tf_cl=tf_cl,
         clear=True,
         tasks=tasks,
-        tseries=[tserie_rhoMean],
+        # tseries=[tserie_rhoMean],
     )
 
-    tcl = setup.get_free_fall_time()
-    tf = tf_cl * tcl
-    t_stops = np.linspace(0, tf, nb_dumps)
-    setup.ready_set_go()
-    console.print(t_stops)
-    setup.loop(t_stops)
-    # setup.replay()
+    # tcl = setup.get_free_fall_time()
+    # tf = tf_cl * tcl
+    # t_stops = np.linspace(0, tf, nb_dumps)
+    # setup.ready_set_go()
+    # console.print(t_stops)
+    # setup.loop(t_stops)
+    setup.replay(
+        clim=[0, 0.34], overwrite_folder="outputs/2balls_tillotson_500k_mm_cd10_uc_skewv2_000"
+    )
     setup.movie()
 
 # ./shamrock --sycl-cfg 0:0 --loglevel 1 --rscript ./balls.py
